@@ -8,22 +8,30 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# -----------------------------------------------------------
-# CONFIG FROM ENV / STREAMLIT SECRETS
-# -----------------------------------------------------------
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-if not GITHUB_TOKEN:
-    raise ValueError("Missing GITHUB_TOKEN. Set it in .env.")
 
-OWNER = os.getenv("GITHUB_OWNER", "trilokesh-sarkar")
-REPO = os.getenv("GITHUB_REPO", "Report_Transactions")
-BRANCH = os.getenv("GITHUB_BRANCH", "main")
-FILE_PATH = os.getenv("GITHUB_FILE_PATH", "finance_data.csv")
+def _get_cfg(name: str, default: str | None = None) -> str | None:
+    value = os.getenv(name, default)
+    if value is None:
+        return None
+    return str(value).strip()
+
+
+# -----------------------------------------------------------
+# CONFIG
+# -----------------------------------------------------------
+GITHUB_TOKEN = _get_cfg("GITHUB_TOKEN")
+if not GITHUB_TOKEN:
+    raise ValueError("Missing GITHUB_TOKEN. Set it in .env or Streamlit secrets.")
+
+OWNER = _get_cfg("GITHUB_OWNER", "trilokesh-sarkar")
+REPO = _get_cfg("GITHUB_REPO", "Report_Transactions")
+BRANCH = _get_cfg("GITHUB_BRANCH", "main")
+FILE_PATH = _get_cfg("GITHUB_FILE_PATH", "finance_data.csv")
 
 BASE_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/contents/{FILE_PATH}"
 
 HEADERS = {
-    "Authorization": f"token {GITHUB_TOKEN}",  # IMPORTANT: token not Bearer
+    "Authorization": f"token {GITHUB_TOKEN}",
     "Accept": "application/vnd.github+json",
 }
 
@@ -32,6 +40,25 @@ RECURRING_BIKE_EMI_AMOUNT = 5333.0
 RECURRING_BIKE_EMI_CATEGORY = "bike_emi"
 RECURRING_BIKE_EMI_ACCOUNT = "Auto Debit"
 RECURRING_TIMEZONE = ZoneInfo("Asia/Kolkata")
+
+
+def _build_github_error(action: str, status_code: int, response_text: str) -> str:
+    hint = "Check GitHub config and token permissions."
+    if status_code == 401:
+        hint = "Invalid or expired GITHUB_TOKEN."
+    elif status_code == 403:
+        hint = "Token lacks required permissions (Contents: write)."
+    elif status_code == 404:
+        hint = (
+            "Target not found or token has no access. Verify GITHUB_OWNER, "
+            "GITHUB_REPO, GITHUB_BRANCH, and GITHUB_FILE_PATH exactly."
+        )
+
+    return (
+        f"GitHub {action} Failed: {status_code}. {hint} "
+        f"[OWNER={OWNER}, REPO={REPO}, BRANCH={BRANCH}, FILE={FILE_PATH}] "
+        f"API={response_text[:300]}"
+    )
 
 
 def get_current_month_start() -> pd.Timestamp:
@@ -44,7 +71,6 @@ def apply_recurring_transactions(df: pd.DataFrame) -> pd.DataFrame:
     updated["period"] = pd.to_datetime(updated["period"], errors="coerce")
 
     current_month_start = get_current_month_start()
-
     if current_month_start < RECURRING_BIKE_EMI_START:
         return updated
 
@@ -99,15 +125,10 @@ def apply_recurring_transactions(df: pd.DataFrame) -> pd.DataFrame:
 # READ CSV
 # -----------------------------------------------------------
 def read_csv():
-    r = requests.get(BASE_URL, headers=HEADERS)
+    r = requests.get(BASE_URL, headers=HEADERS, params={"ref": BRANCH})
 
     if r.status_code != 200:
-        raise Exception(
-            "GitHub Read Failed: "
-            f"{r.status_code} - {r.text}. "
-            f"Check GITHUB_OWNER={OWNER}, GITHUB_REPO={REPO}, "
-            f"GITHUB_BRANCH={BRANCH}, GITHUB_FILE_PATH={FILE_PATH}."
-        )
+        raise Exception(_build_github_error("Read", r.status_code, r.text))
 
     content = r.json()["content"]
     decoded = base64.b64decode(content).decode("utf-8")
@@ -126,20 +147,15 @@ def read_csv():
 # WRITE CSV
 # -----------------------------------------------------------
 def write_csv(df, message="update csv"):
-    # 1️⃣ Get latest SHA
-    r = requests.get(BASE_URL, headers=HEADERS)
+    # 1) Get latest SHA from the configured branch
+    r = requests.get(BASE_URL, headers=HEADERS, params={"ref": BRANCH})
 
     if r.status_code != 200:
-        raise Exception(
-            "GitHub SHA Fetch Failed: "
-            f"{r.status_code} - {r.text}. "
-            f"Check GITHUB_OWNER={OWNER}, GITHUB_REPO={REPO}, "
-            f"GITHUB_BRANCH={BRANCH}, GITHUB_FILE_PATH={FILE_PATH}."
-        )
+        raise Exception(_build_github_error("SHA Fetch", r.status_code, r.text))
 
     sha = r.json()["sha"]
 
-    # 2️⃣ Convert DF to base64
+    # 2) Convert DF to base64
     csv_buffer = StringIO()
     df.to_csv(csv_buffer, index=False)
     encoded = base64.b64encode(csv_buffer.getvalue().encode()).decode()
@@ -154,11 +170,6 @@ def write_csv(df, message="update csv"):
     r = requests.put(BASE_URL, headers=HEADERS, json=payload)
 
     if r.status_code not in [200, 201]:
-        raise Exception(
-            "GitHub Write Failed: "
-            f"{r.status_code} - {r.text}. "
-            f"Check GITHUB_OWNER={OWNER}, GITHUB_REPO={REPO}, "
-            f"GITHUB_BRANCH={BRANCH}, GITHUB_FILE_PATH={FILE_PATH}, and token permissions."
-        )
+        raise Exception(_build_github_error("Write", r.status_code, r.text))
 
     return True
