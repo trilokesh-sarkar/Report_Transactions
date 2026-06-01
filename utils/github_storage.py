@@ -1,19 +1,24 @@
 import base64
+import os
 import requests
 import pandas as pd
 from io import StringIO
 from zoneinfo import ZoneInfo
-import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # -----------------------------------------------------------
-# CONFIG FROM STREAMLIT SECRETS
+# CONFIG FROM ENV / STREAMLIT SECRETS
 # -----------------------------------------------------------
-GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+if not GITHUB_TOKEN:
+    raise ValueError("Missing GITHUB_TOKEN. Set it in .env.")
 
-OWNER = "Trilokesh-Praxis-2023"
-REPO = "Finalcial_App"
-BRANCH = "main"
-FILE_PATH = "finance_data.csv"
+OWNER = os.getenv("GITHUB_OWNER", "trilokesh-sarkar")
+REPO = os.getenv("GITHUB_REPO", "Report_Transactions")
+BRANCH = os.getenv("GITHUB_BRANCH", "main")
+FILE_PATH = os.getenv("GITHUB_FILE_PATH", "finance_data.csv")
 
 BASE_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/contents/{FILE_PATH}"
 
@@ -97,7 +102,12 @@ def read_csv():
     r = requests.get(BASE_URL, headers=HEADERS)
 
     if r.status_code != 200:
-        raise Exception(f"GitHub Read Failed: {r.status_code} - {r.text}")
+        raise Exception(
+            "GitHub Read Failed: "
+            f"{r.status_code} - {r.text}. "
+            f"Check GITHUB_OWNER={OWNER}, GITHUB_REPO={REPO}, "
+            f"GITHUB_BRANCH={BRANCH}, GITHUB_FILE_PATH={FILE_PATH}."
+        )
 
     content = r.json()["content"]
     decoded = base64.b64decode(content).decode("utf-8")
@@ -120,7 +130,12 @@ def write_csv(df, message="update csv"):
     r = requests.get(BASE_URL, headers=HEADERS)
 
     if r.status_code != 200:
-        raise Exception(f"GitHub SHA Fetch Failed: {r.status_code} - {r.text}")
+        raise Exception(
+            "GitHub SHA Fetch Failed: "
+            f"{r.status_code} - {r.text}. "
+            f"Check GITHUB_OWNER={OWNER}, GITHUB_REPO={REPO}, "
+            f"GITHUB_BRANCH={BRANCH}, GITHUB_FILE_PATH={FILE_PATH}."
+        )
 
     sha = r.json()["sha"]
 
@@ -139,6 +154,11 @@ def write_csv(df, message="update csv"):
     r = requests.put(BASE_URL, headers=HEADERS, json=payload)
 
     if r.status_code not in [200, 201]:
-        raise Exception(f"GitHub Write Failed: {r.status_code} - {r.text}")
+        raise Exception(
+            "GitHub Write Failed: "
+            f"{r.status_code} - {r.text}. "
+            f"Check GITHUB_OWNER={OWNER}, GITHUB_REPO={REPO}, "
+            f"GITHUB_BRANCH={BRANCH}, GITHUB_FILE_PATH={FILE_PATH}, and token permissions."
+        )
 
     return True
