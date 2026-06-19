@@ -147,7 +147,7 @@ with st.expander("Add Expense Form"):
     with st.form("expense_form", clear_on_submit=True):
         d = st.date_input("📅 Date")
 
-        categories = sorted(set(df.category.dropna().astype(str).tolist()) | {"bike_emi"})
+        categories = sorted( set(df.category.dropna().astype(str).tolist()) | {"bike_emi", "Trip"} )
         default_cat_index = categories.index("Food") if "Food" in categories else 0
         cat = st.selectbox("📂 Category", categories, index=default_cat_index)
 
