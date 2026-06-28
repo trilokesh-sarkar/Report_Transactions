@@ -1,7 +1,6 @@
 period,accounts,category,amount,month,running_total,year,year_month
 2026-07-11,UPI,Trip,3370.0,July,501140.86,2026,2026-07
 2026-06-28,UPI,Food,124.0,June,503473.86,2026,2026-06
-2026-06-28,UPI,Rent,4000.0,June,507473.86,2026,2026-06
 2026-06-27,UPI,Transport,341.0,June,503175.86,2026,2026-06
 2026-06-27,UPI,Party_Weekend,174.0,June,503349.86,2026,2026-06
 2026-06-26,UPI,Food,65.0,June,502834.86,2026,2026-06
@@ -927,4 +926,3 @@ period,accounts,category,amount,month,running_total,year,year_month
 2024-10-04,Cash,Transport,200.0,2024-10,49300.0,2024,2024-10
 2024-10-04,Upi,Recharge,3000.0,2024-10,49300.0,2024,2024-10
 2024-10-02,Upi,Rent,46000.0,2024-10,46000.0,2024,2024-10
-2026-07-02,UPI,Recharge,588.0,July,508061.86,2026,2026-07
