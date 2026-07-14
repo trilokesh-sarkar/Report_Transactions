@@ -144,7 +144,7 @@ def refresh():
 
 
 def configure_page():
-    load_dotenv()
+    load_dotenv(dotenv_path=".env", override=False)
     st.set_page_config(
         page_title="💰 Finance Analytics",
         page_icon="📊",

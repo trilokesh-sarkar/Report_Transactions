@@ -22,6 +22,8 @@ def _get_setting(name: str, default: str | None = None) -> str | None:
 
     try:
         secret_value = st.secrets.get(name)
+        if secret_value is None and "general" in st.secrets:
+            secret_value = st.secrets["general"].get(name)
     except Exception:
         secret_value = None
 
@@ -36,7 +38,7 @@ def get_ai_configuration_status() -> tuple[bool, str]:
     model = _get_setting("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
 
     if not api_key:
-        return False, "Add OPENROUTER_API_KEY to your .env file to enable Finance Copilot and Goal Planning Agent."
+        return False, "Add OPENROUTER_API_KEY to `.env` or `.streamlit/secrets.toml` to enable Finance Copilot and Goal Planning Agent."
 
     return True, f"Using OpenRouter model `{model}`."
 

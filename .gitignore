@@ -59,4 +59,5 @@ logs/
 *.log
 Backup
 *.csv
-*.xlsx.streamlit/secrets.toml
+*.xlsx
+.streamlit/secrets.toml
