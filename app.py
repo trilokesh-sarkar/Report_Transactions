@@ -3,7 +3,7 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 
-from utils.github_storage import read_csv, write_csv
+from utils.github_storage import read_csv, write_csv, write_savings_csv
 from utils.kpi_dashboard import render_kpis, get_income
 
 GOAL_TRACKING_START_PERIOD = "2026-04"
@@ -32,6 +32,94 @@ def months_until_target(current_period, target_period):
     target = pd.Period(target_period, freq="M")
     month_gap = (target.year - current.year) * 12 + (target.month - current.month)
     return max(month_gap, 0) + 1
+
+
+def prepare_goal_tracker_items(goal_items):
+    base_columns = ["Goal", "Target Amount", "Saved at Start", "Target Month", "Priority"]
+
+    if goal_items is None or len(goal_items) == 0:
+        return pd.DataFrame(columns=base_columns)
+
+    prepared = pd.DataFrame(goal_items).copy()
+
+    # Migrate older session rows that stored the manual value as "Current Saved".
+    if "Saved at Start" not in prepared.columns:
+        legacy_saved = prepared["Current Saved"] if "Current Saved" in prepared.columns else 0.0
+        prepared["Saved at Start"] = pd.to_numeric(legacy_saved, errors="coerce").fillna(0.0)
+
+    for column in base_columns:
+        if column not in prepared.columns:
+            prepared[column] = "Medium" if column == "Priority" else 0.0 if column == "Saved at Start" else None
+
+    return prepared[base_columns].copy()
+
+
+def allocate_savings_to_goals(goal_rows, savings_pool):
+    if goal_rows.empty:
+        return pd.Series(dtype=float)
+
+    allocation_order = {"High": 0, "Medium": 1, "Low": 2}
+    allocation_view = goal_rows.copy()
+    allocation_view["_priority_sort"] = allocation_view["Priority"].map(allocation_order).fillna(9)
+    allocation_view["_target_ts"] = pd.to_datetime(allocation_view["Target Month"], format="%Y-%m", errors="coerce")
+    allocation_view = allocation_view.sort_values(
+        ["_priority_sort", "_target_ts", "Goal"],
+        ascending=[True, True, True],
+        na_position="last",
+    )
+
+    remaining_pool = max(float(savings_pool), 0.0)
+    allocations = {}
+
+    for idx, row in allocation_view.iterrows():
+        baseline_saved = max(float(row["Saved at Start"]), 0.0)
+        target_amount = max(float(row["Target Amount"]), 0.0)
+        remaining_need = max(target_amount - baseline_saved, 0.0)
+        auto_saved = min(remaining_need, remaining_pool)
+        allocations[idx] = auto_saved
+        remaining_pool -= auto_saved
+
+    return pd.Series(allocations, dtype=float)
+
+
+def build_monthly_savings_export(monthly_goal_view):
+    export_columns = [
+        "year_month",
+        "month_start",
+        "monthly_earnings",
+        "monthly_expense",
+        "monthly_savings",
+        "cumulative_savings",
+    ]
+
+    if monthly_goal_view.empty:
+        return pd.DataFrame(columns=export_columns)
+
+    export_df = monthly_goal_view.copy()
+    export_df["month_start"] = export_df["month_ts"].dt.strftime("%Y-%m-%d")
+    export_df["cumulative_savings"] = export_df["savings"].cumsum().round(2)
+    export_df = export_df.rename(
+        columns={
+            "income": "monthly_earnings",
+            "spend": "monthly_expense",
+            "savings": "monthly_savings",
+        }
+    )
+    export_df = export_df[export_columns].copy()
+
+    for column in ["monthly_earnings", "monthly_expense", "monthly_savings", "cumulative_savings"]:
+        export_df[column] = pd.to_numeric(export_df[column], errors="coerce").fillna(0.0).round(2)
+
+    return export_df
+
+
+def sync_monthly_savings_export(export_df):
+    export_signature = export_df.to_csv(index=False)
+    if st.session_state.get("monthly_savings_export_signature") == export_signature:
+        return
+
+    write_savings_csv(export_df, "Sync monthly savings summary")
+    st.session_state["monthly_savings_export_signature"] = export_signature
 
 
 # -----------------------------------------------------------
@@ -250,6 +338,12 @@ monthly_goal_view = monthly_goal_view[
 monthly_goal_view["savings"] = monthly_goal_view["income"] - monthly_goal_view["spend"]
 monthly_goal_view["month_ts"] = pd.to_datetime(monthly_goal_view["year_month"])
 monthly_goal_view = monthly_goal_view.sort_values("month_ts").reset_index(drop=True)
+monthly_savings_export = build_monthly_savings_export(monthly_goal_view)
+
+try:
+    sync_monthly_savings_export(monthly_savings_export)
+except Exception as exc:
+    st.warning(f"Unable to sync monthly savings CSV to GitHub: {exc}")
 
 if monthly_goal_view.empty:
     st.info("Goal tracking needs at least one month with mapped income.")
@@ -258,55 +352,70 @@ else:
     avg_recent_savings = float(monthly_goal_view["savings"].tail(recent_window).mean())
     avg_all_savings = float(monthly_goal_view["savings"].mean())
     latest_savings = float(monthly_goal_view["savings"].iloc[-1])
+    cumulative_savings = max(float(monthly_goal_view["savings"].sum()), 0.0)
     projected_monthly_contribution = max(avg_recent_savings, 0.0)
     current_goal_period = monthly_goal_view["year_month"].iloc[-1]
 
     default_goals = pd.DataFrame(
         [
-            {"Goal": "Emergency Fund", "Target Amount": 150000.0, "Current Saved": 0.0, "Target Month": "2026-12", "Priority": "High"},
-            {"Goal": "Trip", "Target Amount": 60000.0, "Current Saved": 0.0, "Target Month": "2026-10", "Priority": "Medium"},
-            {"Goal": "Gadget", "Target Amount": 80000.0, "Current Saved": 0.0, "Target Month": "2027-02", "Priority": "Low"},
-            {"Goal": "Loan Closure Target", "Target Amount": 200000.0, "Current Saved": 0.0, "Target Month": "2027-06", "Priority": "High"},
+            {"Goal": "Emergency Fund", "Target Amount": 150000.0, "Saved at Start": 0.0, "Target Month": "2026-12", "Priority": "High"},
+            {"Goal": "Trip", "Target Amount": 60000.0, "Saved at Start": 0.0, "Target Month": "2026-10", "Priority": "Medium"},
+            {"Goal": "Gadget", "Target Amount": 80000.0, "Saved at Start": 0.0, "Target Month": "2027-02", "Priority": "Low"},
+            {"Goal": "Loan Closure Target", "Target Amount": 200000.0, "Saved at Start": 0.0, "Target Month": "2027-06", "Priority": "High"},
         ]
     )
 
     if "goal_tracker_items" not in st.session_state:
         st.session_state["goal_tracker_items"] = default_goals
+    else:
+        st.session_state["goal_tracker_items"] = prepare_goal_tracker_items(st.session_state["goal_tracker_items"])
 
-    g1, g2, g3, g4 = st.columns(4)
+    g1, g2, g3, g4, g5 = st.columns(5)
     g1.metric("Avg Savings / Month", format_currency(avg_all_savings))
     g2.metric("Recent Savings Pace", format_currency(avg_recent_savings))
     g3.metric("Latest Month Savings", format_currency(latest_savings))
     g4.metric("Projection Basis", f"{recent_window}-month avg")
+    g5.metric("Auto Savings Pool", format_currency(cumulative_savings))
+
+    st.caption(
+        "Enter the amount already saved outside this tracker in `Saved at Start`. "
+        "`Current Saved` is updated automatically using net savings since April 2026, "
+        "allocated by priority and nearest target month."
+    )
+    st.caption(
+        "Monthly savings, earnings, and expense data are also synced to `monthly_savings_data.csv` in GitHub for reuse."
+    )
 
     goal_editor = st.data_editor(
-        st.session_state["goal_tracker_items"],
+        prepare_goal_tracker_items(st.session_state["goal_tracker_items"]),
         num_rows="dynamic",
         hide_index=True,
         width="stretch",
         column_config={
             "Goal": st.column_config.TextColumn("Goal"),
             "Target Amount": st.column_config.NumberColumn("Target Amount", min_value=0.0, step=5000.0, format="%.2f"),
-            "Current Saved": st.column_config.NumberColumn("Current Saved", min_value=0.0, step=1000.0, format="%.2f"),
+            "Saved at Start": st.column_config.NumberColumn("Saved at Start", min_value=0.0, step=1000.0, format="%.2f"),
             "Target Month": st.column_config.TextColumn("Target Month", help="Use YYYY-MM format, for example 2026-12"),
             "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"]),
         },
         key="goal_tracker_editor",
     )
-    st.session_state["goal_tracker_items"] = goal_editor
+    st.session_state["goal_tracker_items"] = prepare_goal_tracker_items(goal_editor)
 
-    goal_results = goal_editor.copy()
-    goal_results = goal_results.dropna(subset=["Goal", "Target Amount", "Current Saved", "Target Month"])
+    goal_results = st.session_state["goal_tracker_items"].copy()
+    goal_results = goal_results.dropna(subset=["Goal", "Target Amount", "Saved at Start", "Target Month"])
     goal_results = goal_results[goal_results["Goal"].astype(str).str.strip() != ""].copy()
 
     if goal_results.empty:
         st.info("Add one or more goals to start tracking progress.")
     else:
         goal_results["Target Amount"] = pd.to_numeric(goal_results["Target Amount"], errors="coerce").fillna(0.0)
-        goal_results["Current Saved"] = pd.to_numeric(goal_results["Current Saved"], errors="coerce").fillna(0.0)
+        goal_results["Saved at Start"] = pd.to_numeric(goal_results["Saved at Start"], errors="coerce").fillna(0.0)
         goal_results["Priority"] = goal_results["Priority"].fillna("Medium")
         goal_results["Target Month"] = goal_results["Target Month"].astype(str).str.strip()
         goal_results = goal_results[goal_results["Target Month"].str.match(r"^\d{4}-\d{2}$", na=False)].copy()
+        goal_results["Auto Saved"] = allocate_savings_to_goals(goal_results, cumulative_savings).reindex(goal_results.index, fill_value=0.0)
+        goal_results["Current Saved"] = (goal_results["Saved at Start"] + goal_results["Auto Saved"]).clip(upper=goal_results["Target Amount"])
         goal_results["Remaining"] = (goal_results["Target Amount"] - goal_results["Current Saved"]).clip(lower=0.0)
         goal_results["Progress %"] = goal_results.apply(
             lambda row: ((row["Current Saved"] / row["Target Amount"]) * 100) if row["Target Amount"] > 0 else 0.0,
@@ -359,13 +468,15 @@ else:
         total_goal_remaining = float(goal_results["Remaining"].sum())
         completed_goals = int((goal_results["Status"] == "Completed").sum())
         at_risk_goals = int((goal_results["Status"] == "At Risk").sum())
+        total_auto_saved = float(goal_results["Auto Saved"].sum())
 
-        summary1, summary2, summary3, summary4, summary5 = st.columns(5)
+        summary1, summary2, summary3, summary4, summary5, summary6 = st.columns(6)
         summary1.metric("Goal Corpus", format_currency(total_goal_target))
         summary2.metric("Saved So Far", format_currency(total_goal_saved))
         summary3.metric("Still Needed", format_currency(total_goal_remaining))
         summary4.metric("Completed Goals", completed_goals)
         summary5.metric("At-Risk Goals", at_risk_goals)
+        summary6.metric("Auto Applied", format_currency(total_auto_saved))
 
         goal_summary = goal_results.copy()
         priority_order = {"High": 0, "Medium": 1, "Low": 2}
@@ -374,6 +485,8 @@ else:
 
         for column in [
             "Target Amount",
+            "Saved at Start",
+            "Auto Saved",
             "Current Saved",
             "Remaining",
             "Progress %",

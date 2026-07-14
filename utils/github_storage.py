@@ -26,9 +26,10 @@ if not GITHUB_TOKEN:
 OWNER = _get_cfg("GITHUB_OWNER", "trilokesh-sarkar")
 REPO = _get_cfg("GITHUB_REPO", "Report_Transactions")
 BRANCH = _get_cfg("GITHUB_BRANCH", "main")
-FILE_PATH = _get_cfg("GITHUB_FILE_PATH", "finance_data.csv")
+TRANSACTIONS_FILE_PATH = _get_cfg("GITHUB_FILE_PATH", "finance_data.csv")
+SAVINGS_FILE_PATH = _get_cfg("GITHUB_SAVINGS_FILE_PATH", "monthly_savings_data.csv")
 
-BASE_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/contents/{FILE_PATH}"
+BASE_CONTENTS_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/contents"
 
 HEADERS = {
     "Authorization": f"token {GITHUB_TOKEN}",
@@ -42,7 +43,11 @@ RECURRING_BIKE_EMI_ACCOUNT = "Auto Debit"
 RECURRING_TIMEZONE = ZoneInfo("Asia/Kolkata")
 
 
-def _build_github_error(action: str, status_code: int, response_text: str) -> str:
+def _build_file_url(file_path: str) -> str:
+    return f"{BASE_CONTENTS_URL}/{file_path}"
+
+
+def _build_github_error(action: str, status_code: int, response_text: str, file_path: str) -> str:
     hint = "Check GitHub config and token permissions."
     if status_code == 401:
         hint = "Invalid or expired GITHUB_TOKEN."
@@ -56,9 +61,62 @@ def _build_github_error(action: str, status_code: int, response_text: str) -> st
 
     return (
         f"GitHub {action} Failed: {status_code}. {hint} "
-        f"[OWNER={OWNER}, REPO={REPO}, BRANCH={BRANCH}, FILE={FILE_PATH}] "
+        f"[OWNER={OWNER}, REPO={REPO}, BRANCH={BRANCH}, FILE={file_path}] "
         f"API={response_text[:300]}"
     )
+
+
+def _read_csv_from_path(file_path: str) -> pd.DataFrame:
+    response = requests.get(_build_file_url(file_path), headers=HEADERS, params={"ref": BRANCH})
+
+    if response.status_code != 200:
+        raise Exception(_build_github_error("Read", response.status_code, response.text, file_path))
+
+    content = response.json()["content"]
+    decoded = base64.b64decode(content).decode("utf-8")
+    return pd.read_csv(StringIO(decoded))
+
+
+def _write_csv_to_path(
+    df: pd.DataFrame,
+    file_path: str,
+    message: str,
+    skip_if_unchanged: bool = True,
+):
+    file_url = _build_file_url(file_path)
+    response = requests.get(file_url, headers=HEADERS, params={"ref": BRANCH})
+
+    if response.status_code == 404:
+        existing_sha = None
+        existing_content = None
+    elif response.status_code == 200:
+        body = response.json()
+        existing_sha = body["sha"]
+        existing_content = base64.b64decode(body["content"]).decode("utf-8")
+    else:
+        raise Exception(_build_github_error("SHA Fetch", response.status_code, response.text, file_path))
+
+    csv_buffer = StringIO()
+    df.to_csv(csv_buffer, index=False)
+    new_content = csv_buffer.getvalue()
+
+    if skip_if_unchanged and existing_content == new_content:
+        return False
+
+    payload = {
+        "message": message,
+        "content": base64.b64encode(new_content.encode()).decode(),
+        "branch": BRANCH,
+    }
+    if existing_sha:
+        payload["sha"] = existing_sha
+
+    response = requests.put(file_url, headers=HEADERS, json=payload)
+
+    if response.status_code not in [200, 201]:
+        raise Exception(_build_github_error("Write", response.status_code, response.text, file_path))
+
+    return True
 
 
 def get_current_month_start() -> pd.Timestamp:
@@ -125,15 +183,7 @@ def apply_recurring_transactions(df: pd.DataFrame) -> pd.DataFrame:
 # READ CSV
 # -----------------------------------------------------------
 def read_csv():
-    r = requests.get(BASE_URL, headers=HEADERS, params={"ref": BRANCH})
-
-    if r.status_code != 200:
-        raise Exception(_build_github_error("Read", r.status_code, r.text))
-
-    content = r.json()["content"]
-    decoded = base64.b64decode(content).decode("utf-8")
-
-    df = pd.read_csv(StringIO(decoded))
+    df = _read_csv_from_path(TRANSACTIONS_FILE_PATH)
     df = apply_recurring_transactions(df)
 
     df["period"] = pd.to_datetime(df["period"], errors="coerce")
@@ -143,33 +193,16 @@ def read_csv():
     return df
 
 
+def read_savings_csv():
+    return _read_csv_from_path(SAVINGS_FILE_PATH)
+
+
 # -----------------------------------------------------------
 # WRITE CSV
 # -----------------------------------------------------------
 def write_csv(df, message="update csv"):
-    # 1) Get latest SHA from the configured branch
-    r = requests.get(BASE_URL, headers=HEADERS, params={"ref": BRANCH})
+    return _write_csv_to_path(df, TRANSACTIONS_FILE_PATH, message)
 
-    if r.status_code != 200:
-        raise Exception(_build_github_error("SHA Fetch", r.status_code, r.text))
 
-    sha = r.json()["sha"]
-
-    # 2) Convert DF to base64
-    csv_buffer = StringIO()
-    df.to_csv(csv_buffer, index=False)
-    encoded = base64.b64encode(csv_buffer.getvalue().encode()).decode()
-
-    payload = {
-        "message": message,
-        "content": encoded,
-        "sha": sha,
-        "branch": BRANCH,
-    }
-
-    r = requests.put(BASE_URL, headers=HEADERS, json=payload)
-
-    if r.status_code not in [200, 201]:
-        raise Exception(_build_github_error("Write", r.status_code, r.text))
-
-    return True
+def write_savings_csv(df, message="update monthly savings csv"):
+    return _write_csv_to_path(df, SAVINGS_FILE_PATH, message)
