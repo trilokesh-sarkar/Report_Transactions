@@ -31,3 +31,9 @@ scikit-learn>=1.3.0  # required for train_test_split, MAE etc.
 # ==========================
 matplotlib          # for future graph exports
 statsmodels         # if you plan Holt-Winters / ARIMA use later
+
+# ==========================
+# AGENTIC AI
+# ==========================
+langgraph
+langchain-openai

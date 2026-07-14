@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
+from utils.finance_agent import get_ai_configuration_status, run_finance_agent
 from utils.github_storage import read_csv, write_csv, write_savings_csv
 from utils.kpi_dashboard import get_income, render_kpis
 
@@ -224,6 +225,14 @@ def apply_sidebar_filters(df, filters):
         filtered = filtered[~filtered["category"].isin(filters["exclude_categories"])]
 
     return filtered
+
+
+def summarize_active_filters(filters):
+    summary = {}
+    for key, value in filters.items():
+        if value:
+            summary[key] = value
+    return summary
 
 
 def render_expense_entry(df):
@@ -492,7 +501,13 @@ def render_goal_tracking(df):
 
     if monthly_goal_view.empty:
         st.info("Goal tracking needs at least one month with mapped income.")
-        return
+        return {
+            "df": df.copy(),
+            "monthly_goal_view": monthly_goal_view,
+            "goal_results": pd.DataFrame(),
+            "projected_monthly_contribution": 0.0,
+            "current_goal_period": None,
+        }
 
     recent_window = min(3, len(monthly_goal_view))
     avg_recent_savings = float(monthly_goal_view["savings"].tail(recent_window).mean())
@@ -545,7 +560,13 @@ def render_goal_tracking(df):
 
     if goal_results.empty:
         st.info("Add one or more goals to start tracking progress.")
-        return
+        return {
+            "df": df.copy(),
+            "monthly_goal_view": monthly_goal_view,
+            "goal_results": goal_results,
+            "projected_monthly_contribution": projected_monthly_contribution,
+            "current_goal_period": current_goal_period,
+        }
 
     render_goal_summary(goal_results)
     render_goal_table(goal_results)
@@ -558,6 +579,118 @@ def render_goal_tracking(df):
     st.markdown("#### Savings Trend Supporting Goals")
     st.line_chart(savings_plot)
 
+    return {
+        "df": df.copy(),
+        "monthly_goal_view": monthly_goal_view,
+        "goal_results": goal_results,
+        "projected_monthly_contribution": projected_monthly_contribution,
+        "current_goal_period": current_goal_period,
+    }
+
+
+def _run_agent_prompt(session_key, prompt, finance_context, agent_mode):
+    history = st.session_state.setdefault(session_key, [])
+    history.append({"role": "user", "content": prompt})
+    try:
+        reply = run_finance_agent(
+            prompt=prompt,
+            finance_context=finance_context,
+            history=history[:-1],
+            agent_mode=agent_mode,
+        )
+    except Exception as exc:
+        reply = f"AI request failed: {exc}"
+    history.append({"role": "assistant", "content": reply})
+
+
+def render_agentic_ai_section(finance_context):
+    st.markdown("<h3>🤖 Agentic AI</h3>", unsafe_allow_html=True)
+    st.caption(
+        "Finance Copilot and Goal Planning Agent use your OpenRouter model from `.env` and the same transaction and goal data shown above."
+    )
+
+    is_configured, status_message = get_ai_configuration_status()
+    if not is_configured:
+        st.info(status_message)
+        return
+
+    st.caption(status_message)
+    st.caption("The AI reads the full finance dataset plus the live goal tracker state. It suggests changes, but does not edit your data automatically.")
+
+    finance_context = finance_context.copy()
+    finance_context["active_filters"] = st.session_state.get("active_filter_summary", {})
+
+    copilot_tab, planner_tab = st.tabs(["Finance Copilot", "Goal Planning Agent"])
+
+    with copilot_tab:
+        st.caption("Try: `Why did savings drop in July?`, `Which 3 categories hurt my goal progress most?`, or `Can I afford a ₹15k trip next month?`")
+        copilot_history = st.session_state.setdefault("finance_copilot_history", [])
+
+        for message in copilot_history:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        copilot_prompt = st.chat_input("Ask the finance copilot", key="finance_copilot_input")
+        if copilot_prompt:
+            with st.spinner("Finance Copilot is reviewing your data..."):
+                _run_agent_prompt(
+                    session_key="finance_copilot_history",
+                    prompt=copilot_prompt,
+                    finance_context=finance_context,
+                    agent_mode="finance_copilot",
+                )
+            st.rerun()
+
+    with planner_tab:
+        st.caption("Use the buttons for quick planning runs, or ask your own goal-planning question.")
+        planner_history = st.session_state.setdefault("goal_planner_history", [])
+
+        button_cols = st.columns(4)
+        preset_prompts = [
+            ("Risk Review", "Review my goals, identify which ones are at risk, and explain why."),
+            ("Target Months", "Suggest more realistic target months for goals that are currently at risk."),
+            ("Monthly Plan", "Build a month-by-month savings plan for the next 6 months that protects high priority goals first."),
+            ("Rebalance", "Suggest how to rebalance my savings allocations across goals while protecting high priority goals."),
+        ]
+
+        selected_prompt = None
+        for idx, (label, prompt) in enumerate(preset_prompts):
+            if button_cols[idx].button(label, key=f"goal_planner_preset_{idx}"):
+                selected_prompt = prompt
+
+        custom_prompt = st.text_area(
+            "Ask the goal planner",
+            value="",
+            placeholder="Example: Give me a realistic savings plan for my emergency fund and trip goal.",
+            key="goal_planner_custom_prompt",
+        )
+        run_custom_prompt = st.button("Run Goal Planner", key="goal_planner_custom_submit")
+
+        if selected_prompt:
+            with st.spinner("Goal Planning Agent is building a plan..."):
+                _run_agent_prompt(
+                    session_key="goal_planner_history",
+                    prompt=selected_prompt,
+                    finance_context=finance_context,
+                    agent_mode="goal_planner",
+                )
+            st.rerun()
+
+        if run_custom_prompt and custom_prompt.strip():
+            with st.spinner("Goal Planning Agent is building a plan..."):
+                _run_agent_prompt(
+                    session_key="goal_planner_history",
+                    prompt=custom_prompt.strip(),
+                    finance_context=finance_context,
+                    agent_mode="goal_planner",
+                )
+            st.session_state["goal_planner_custom_prompt"] = ""
+            st.rerun()
+
+        for message in planner_history:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
 
 def main():
     configure_page()
@@ -567,6 +700,7 @@ def main():
 
     df = prepare_main_dataframe()
     filters = render_sidebar_filters(df)
+    st.session_state["active_filter_summary"] = summarize_active_filters(filters)
     filtered = apply_sidebar_filters(df, filters)
 
     if filtered.empty:
@@ -577,7 +711,8 @@ def main():
     render_transactions_section(filtered)
     render_delete_section(df)
     render_kpis(filtered=filtered, df=df, MONTHLY_BUDGET=MONTHLY_BUDGET)
-    render_goal_tracking(df)
+    finance_context = render_goal_tracking(df)
+    render_agentic_ai_section(finance_context)
 
 
 main()
