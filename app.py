@@ -594,38 +594,6 @@ def build_finance_context(df):
 
     initialize_goal_tracker_items()
 
-    g1, g2, g3, g4, g5 = st.columns(5)
-    g1.metric("Avg Savings / Month", format_currency(avg_all_savings))
-    g2.metric("Recent Savings Pace", format_currency(avg_recent_savings))
-    g3.metric("Latest Month Savings", format_currency(latest_savings))
-    g4.metric("Projection Basis", f"{recent_window}-month avg")
-    g5.metric("Auto Savings Pool", format_currency(cumulative_savings))
-
-    st.caption(
-        "Enter the amount already saved outside this tracker in `Saved at Start`. "
-        "`Current Saved` is updated automatically using net savings since April 2026, "
-        "allocated by priority and nearest target month."
-    )
-    st.caption(
-        "Monthly savings, earnings, and expense data are also synced to `monthly_savings_data.csv` in GitHub for reuse."
-    )
-
-    goal_editor = st.data_editor(
-        prepare_goal_tracker_items(st.session_state["goal_tracker_items"]),
-        num_rows="dynamic",
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "Goal": st.column_config.TextColumn("Goal"),
-            "Target Amount": st.column_config.NumberColumn("Target Amount", min_value=0.0, step=5000.0, format="%.2f"),
-            "Saved at Start": st.column_config.NumberColumn("Saved at Start", min_value=0.0, step=1000.0, format="%.2f"),
-            "Target Month": st.column_config.TextColumn("Target Month", help="Use YYYY-MM format, for example 2026-12"),
-            "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"]),
-        },
-        key="goal_tracker_editor",
-    )
-    st.session_state["goal_tracker_items"] = prepare_goal_tracker_items(goal_editor)
-
     goal_results = calculate_goal_results(
         st.session_state["goal_tracker_items"],
         cumulative_savings=cumulative_savings,
