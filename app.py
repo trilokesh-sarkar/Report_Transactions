@@ -490,17 +490,11 @@ def render_goal_breakdowns(goal_results):
         st.dataframe(required_savings, width="stretch", height=220)
 
 
-def render_goal_tracking(df):
-    st.markdown("<h3>🎯 Goal Tracking</h3>", unsafe_allow_html=True)
-    st.caption(
-        "Savings projections reset from April 2026 and use mapped income, including the assumption that income from May 2026 onward is ₹32,000."
-    )
-
+def build_finance_context(df):
     monthly_goal_view = build_monthly_goal_view(df)
     sync_goal_savings_export(monthly_goal_view)
 
     if monthly_goal_view.empty:
-        st.info("Goal tracking needs at least one month with mapped income.")
         return {
             "df": df.copy(),
             "monthly_goal_view": monthly_goal_view,
@@ -559,7 +553,6 @@ def render_goal_tracking(df):
     )
 
     if goal_results.empty:
-        st.info("Add one or more goals to start tracking progress.")
         return {
             "df": df.copy(),
             "monthly_goal_view": monthly_goal_view,
@@ -567,6 +560,89 @@ def render_goal_tracking(df):
             "projected_monthly_contribution": projected_monthly_contribution,
             "current_goal_period": current_goal_period,
         }
+
+    return {
+        "df": df.copy(),
+        "monthly_goal_view": monthly_goal_view,
+        "goal_results": goal_results,
+        "projected_monthly_contribution": projected_monthly_contribution,
+        "current_goal_period": current_goal_period,
+    }
+
+
+def render_goal_tracking(df):
+    st.markdown("<h3>🎯 Goal Tracking</h3>", unsafe_allow_html=True)
+    st.caption(
+        "Savings projections reset from April 2026 and use mapped income, including the assumption that income from May 2026 onward is ₹32,000."
+    )
+
+    finance_context = build_finance_context(df)
+    monthly_goal_view = finance_context["monthly_goal_view"]
+
+    if monthly_goal_view.empty:
+        st.info("Goal tracking needs at least one month with mapped income.")
+        return finance_context
+
+    goal_results = finance_context["goal_results"]
+    projected_monthly_contribution = float(finance_context["projected_monthly_contribution"])
+    current_goal_period = finance_context["current_goal_period"]
+    recent_window = min(3, len(monthly_goal_view))
+    avg_recent_savings = float(monthly_goal_view["savings"].tail(recent_window).mean())
+    avg_all_savings = float(monthly_goal_view["savings"].mean())
+    latest_savings = float(monthly_goal_view["savings"].iloc[-1])
+    cumulative_savings = max(float(monthly_goal_view["savings"].sum()), 0.0)
+
+    if goal_results.empty:
+        st.info("Add one or more goals to start tracking progress.")
+        return finance_context
+
+    initialize_goal_tracker_items()
+
+    g1, g2, g3, g4, g5 = st.columns(5)
+    g1.metric("Avg Savings / Month", format_currency(avg_all_savings))
+    g2.metric("Recent Savings Pace", format_currency(avg_recent_savings))
+    g3.metric("Latest Month Savings", format_currency(latest_savings))
+    g4.metric("Projection Basis", f"{recent_window}-month avg")
+    g5.metric("Auto Savings Pool", format_currency(cumulative_savings))
+
+    st.caption(
+        "Enter the amount already saved outside this tracker in `Saved at Start`. "
+        "`Current Saved` is updated automatically using net savings since April 2026, "
+        "allocated by priority and nearest target month."
+    )
+    st.caption(
+        "Monthly savings, earnings, and expense data are also synced to `monthly_savings_data.csv` in GitHub for reuse."
+    )
+
+    goal_editor = st.data_editor(
+        prepare_goal_tracker_items(st.session_state["goal_tracker_items"]),
+        num_rows="dynamic",
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "Goal": st.column_config.TextColumn("Goal"),
+            "Target Amount": st.column_config.NumberColumn("Target Amount", min_value=0.0, step=5000.0, format="%.2f"),
+            "Saved at Start": st.column_config.NumberColumn("Saved at Start", min_value=0.0, step=1000.0, format="%.2f"),
+            "Target Month": st.column_config.TextColumn("Target Month", help="Use YYYY-MM format, for example 2026-12"),
+            "Priority": st.column_config.SelectboxColumn("Priority", options=["High", "Medium", "Low"]),
+        },
+        key="goal_tracker_editor",
+    )
+    st.session_state["goal_tracker_items"] = prepare_goal_tracker_items(goal_editor)
+
+    goal_results = calculate_goal_results(
+        st.session_state["goal_tracker_items"],
+        cumulative_savings=cumulative_savings,
+        projected_monthly_contribution=projected_monthly_contribution,
+        current_goal_period=current_goal_period,
+    )
+
+    if goal_results.empty:
+        st.info("Add one or more goals to start tracking progress.")
+        finance_context["goal_results"] = goal_results
+        return finance_context
+
+    finance_context["goal_results"] = goal_results
 
     render_goal_summary(goal_results)
     render_goal_table(goal_results)
@@ -579,13 +655,7 @@ def render_goal_tracking(df):
     st.markdown("#### Savings Trend Supporting Goals")
     st.line_chart(savings_plot)
 
-    return {
-        "df": df.copy(),
-        "monthly_goal_view": monthly_goal_view,
-        "goal_results": goal_results,
-        "projected_monthly_contribution": projected_monthly_contribution,
-        "current_goal_period": current_goal_period,
-    }
+    return finance_context
 
 
 def _run_agent_prompt(session_key, prompt, finance_context, agent_mode):
@@ -715,4 +785,5 @@ def main():
     render_agentic_ai_section(finance_context)
 
 
-main()
+if __name__ == "__main__":
+    main()
