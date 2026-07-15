@@ -1,7 +1,7 @@
 import streamlit as st
 from dotenv import load_dotenv
 
-from app import build_finance_context, load_custom_css, prepare_main_dataframe, render_agentic_ai_section, require_password
+from app import build_finance_context, load_custom_css, prepare_main_dataframe, render_agentic_ai_section
 
 
 def render_context_snapshot(finance_context):
@@ -23,8 +23,6 @@ def main():
 
     st.title("🤖 Finance AI Chatbot")
     st.caption("Use a dedicated page for Finance Copilot and Goal Planning Agent without scrolling through the main dashboard.")
-
-    require_password()
 
     df = prepare_main_dataframe()
     st.session_state["active_filter_summary"] = {}

@@ -754,7 +754,6 @@ def render_agentic_ai_section(finance_context):
                     finance_context=finance_context,
                     agent_mode="goal_planner",
                 )
-            st.session_state["goal_planner_custom_prompt"] = ""
             st.rerun()
 
         for message in planner_history:
