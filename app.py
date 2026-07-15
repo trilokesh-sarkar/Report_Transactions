@@ -5,7 +5,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from utils.finance_agent import get_ai_configuration_status, run_finance_agent
-from utils.github_storage import read_csv, write_csv, write_savings_csv
+from utils.github_storage import read_chat_history_csv, read_csv, write_chat_history_csv, write_csv, write_savings_csv
 from utils.kpi_dashboard import get_income, render_kpis
 
 GOAL_TRACKING_START_PERIOD = "2026-04"
@@ -141,6 +141,87 @@ def load_data():
 def refresh():
     load_data.clear()
     st.rerun()
+
+
+def _chat_history_signature(history):
+    return tuple((item.get("role", ""), item.get("content", "")) for item in history or [])
+
+
+def load_persisted_chat_history(agent_type):
+    chat_df = read_chat_history_csv()
+    if chat_df.empty:
+        return []
+
+    required_columns = {"agent_type", "message_index", "role", "content"}
+    if not required_columns.issubset(set(chat_df.columns)):
+        return []
+
+    chat_df = chat_df[chat_df["agent_type"].astype(str) == str(agent_type)].copy()
+    if chat_df.empty:
+        return []
+
+    chat_df["message_index"] = pd.to_numeric(chat_df["message_index"], errors="coerce").fillna(0).astype(int)
+    chat_df = chat_df.sort_values("message_index")
+
+    return [
+        {
+            "role": str(row["role"]),
+            "content": str(row["content"]),
+        }
+        for _, row in chat_df.iterrows()
+        if str(row.get("role", "")).strip() and str(row.get("content", "")).strip()
+    ]
+
+
+def ensure_chat_history_loaded(session_key, agent_type):
+    loaded_flag_key = f"{session_key}_loaded"
+    if st.session_state.get(loaded_flag_key):
+        return
+
+    history = load_persisted_chat_history(agent_type)
+    st.session_state[session_key] = history
+    st.session_state[f"{session_key}_signature"] = _chat_history_signature(history)
+    st.session_state[loaded_flag_key] = True
+
+
+def persist_chat_history(session_key, agent_type):
+    history = st.session_state.get(session_key, [])
+    current_signature = _chat_history_signature(history)
+    signature_key = f"{session_key}_signature"
+
+    if st.session_state.get(signature_key) == current_signature:
+        return
+
+    chat_df = read_chat_history_csv()
+    if chat_df.empty:
+        chat_df = pd.DataFrame(columns=["agent_type", "message_index", "role", "content", "saved_at"])
+
+    if "agent_type" in chat_df.columns:
+        chat_df = chat_df[chat_df["agent_type"].astype(str) != str(agent_type)].copy()
+    else:
+        chat_df["agent_type"] = ""
+
+    saved_at = pd.Timestamp.now(tz="Asia/Kolkata").isoformat()
+    history_rows = pd.DataFrame(
+        [
+            {
+                "agent_type": agent_type,
+                "message_index": idx,
+                "role": item.get("role", ""),
+                "content": item.get("content", ""),
+                "saved_at": saved_at,
+            }
+            for idx, item in enumerate(history)
+        ]
+    )
+
+    if history_rows.empty:
+        combined = chat_df
+    else:
+        combined = pd.concat([chat_df, history_rows], ignore_index=True)
+
+    write_chat_history_csv(combined, f"Sync {agent_type} chat history")
+    st.session_state[signature_key] = current_signature
 
 
 def configure_page():
@@ -671,6 +752,7 @@ def _run_agent_prompt(session_key, prompt, finance_context, agent_mode):
     except Exception as exc:
         reply = f"AI request failed: {exc}"
     history.append({"role": "assistant", "content": reply})
+    persist_chat_history(session_key, agent_mode)
 
 
 def render_agentic_ai_section(finance_context):
@@ -686,9 +768,12 @@ def render_agentic_ai_section(finance_context):
 
     st.caption(status_message)
     st.caption("The AI reads the full finance dataset plus the live goal tracker state. It suggests changes, but does not edit your data automatically.")
+    st.caption("Chats are saved to GitHub and reloaded automatically, so you can continue them later.")
 
     finance_context = finance_context.copy()
     finance_context["active_filters"] = st.session_state.get("active_filter_summary", {})
+    ensure_chat_history_loaded("finance_copilot_history", "finance_copilot")
+    ensure_chat_history_loaded("goal_planner_history", "goal_planner")
 
     copilot_tab, planner_tab = st.tabs(["Finance Copilot", "Goal Planning Agent"])
 

@@ -28,6 +28,7 @@ REPO = _get_cfg("GITHUB_REPO", "Report_Transactions")
 BRANCH = _get_cfg("GITHUB_BRANCH", "main")
 TRANSACTIONS_FILE_PATH = _get_cfg("GITHUB_FILE_PATH", "finance_data.csv")
 SAVINGS_FILE_PATH = _get_cfg("GITHUB_SAVINGS_FILE_PATH", "monthly_savings_data.csv")
+CHAT_HISTORY_FILE_PATH = _get_cfg("GITHUB_CHAT_FILE_PATH", "agent_chat_history.csv")
 
 BASE_CONTENTS_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/contents"
 
@@ -66,8 +67,11 @@ def _build_github_error(action: str, status_code: int, response_text: str, file_
     )
 
 
-def _read_csv_from_path(file_path: str) -> pd.DataFrame:
+def _read_csv_from_path(file_path: str, missing_ok: bool = False) -> pd.DataFrame:
     response = requests.get(_build_file_url(file_path), headers=HEADERS, params={"ref": BRANCH})
+
+    if response.status_code == 404 and missing_ok:
+        return pd.DataFrame()
 
     if response.status_code != 200:
         raise Exception(_build_github_error("Read", response.status_code, response.text, file_path))
@@ -197,6 +201,10 @@ def read_savings_csv():
     return _read_csv_from_path(SAVINGS_FILE_PATH)
 
 
+def read_chat_history_csv():
+    return _read_csv_from_path(CHAT_HISTORY_FILE_PATH, missing_ok=True)
+
+
 # -----------------------------------------------------------
 # WRITE CSV
 # -----------------------------------------------------------
@@ -206,3 +214,7 @@ def write_csv(df, message="update csv"):
 
 def write_savings_csv(df, message="update monthly savings csv"):
     return _write_csv_to_path(df, SAVINGS_FILE_PATH, message)
+
+
+def write_chat_history_csv(df, message="update agent chat history csv"):
+    return _write_csv_to_path(df, CHAT_HISTORY_FILE_PATH, message)
