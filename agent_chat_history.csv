@@ -29,3 +29,31 @@ goal_planner,1,assistant,"**Re‑targeting the “At Risk” goals**
 4. **If you can increase your monthly contribution** (e.g., by $1,000–$2,000), recalculate the target dates—this will bring the high‑priority goals back on track sooner.
 
 By aligning the target months with the realistic pace of your current savings, you keep all goals attainable while protecting the most critical ones.",2026-07-15T15:11:27.461016+05:30
+finance_copilot,0,user,How much time is needed to end bike emi and if i pay 30k and 50 k consecutively how much time will be saved,2026-07-25T11:36:42.740873+05:30
+finance_copilot,1,assistant,"**Current bike‑EMI status (July 2026)**  
+- Monthly payment: **₹5,333** (from the July 2026 summary).  
+- The dataset does not contain the remaining principal or the interest rate, so we can only give a rough estimate.
+
+---
+
+### 1. How long to finish the bike‑EMI with the current payment
+
+If the loan balance were, say, **₹200,000** (a typical bike loan) and the interest rate were 12 % p.a. (≈ 1 % per month), the standard amortisation would take about **36 months**.  
+*This is a rough figure – the exact duration depends on the actual balance and rate.*
+
+---
+
+### 2. Time saved by making extra payments
+
+| Extra payment | Months saved (≈ extra ÷ ₹5,333) | Cumulative months saved |
+|---------------|---------------------------------|--------------------------|
+| ₹30,000       | 30 000 / 5,333 ≈ **5.6 months** | 5.6 months |
+| ₹50,000       | 50 000 / 5,333 ≈ **9.4 months** | 15 months |
+
+So, **paying ₹30 k followed by ₹50 k would cut the loan term by roughly 15 months** (≈ 1 year 3 months), assuming the extra amounts are applied directly to principal and the interest rate stays the same.
+
+---
+
+**Bottom line**  
+- With the current ₹5,333 EMI, a typical bike loan would finish in about 3 years.  
+- Adding ₹30 k and then ₹50 k extra payments could bring the payoff forward by ~15 months, but the exact savings depend on the remaining balance and interest rate.",2026-07-25T11:36:42.740873+05:30
