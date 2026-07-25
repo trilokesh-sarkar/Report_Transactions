@@ -29,7 +29,7 @@ goal_planner,1,assistant,"**Re‑targeting the “At Risk” goals**
 4. **If you can increase your monthly contribution** (e.g., by $1,000–$2,000), recalculate the target dates—this will bring the high‑priority goals back on track sooner.
 
 By aligning the target months with the realistic pace of your current savings, you keep all goals attainable while protecting the most critical ones.",2026-07-15T15:11:27.461016+05:30
-finance_copilot,0,user,How much time is needed to end bike emi and if i pay 30k and 50 k consecutively how much time will be saved,2026-07-25T11:36:42.740873+05:30
+finance_copilot,0,user,How much time is needed to end bike emi and if i pay 30k and 50 k consecutively how much time will be saved,2026-07-25T11:40:41.232238+05:30
 finance_copilot,1,assistant,"**Current bike‑EMI status (July 2026)**  
 - Monthly payment: **₹5,333** (from the July 2026 summary).  
 - The dataset does not contain the remaining principal or the interest rate, so we can only give a rough estimate.
@@ -56,4 +56,48 @@ So, **paying ₹30 k followed by ₹50 k would cut the loan term by roughly 
 
 **Bottom line**  
 - With the current ₹5,333 EMI, a typical bike loan would finish in about 3 years.  
-- Adding ₹30 k and then ₹50 k extra payments could bring the payoff forward by ~15 months, but the exact savings depend on the remaining balance and interest rate.",2026-07-25T11:36:42.740873+05:30
+- Adding ₹30 k and then ₹50 k extra payments could bring the payoff forward by ~15 months, but the exact savings depend on the remaining balance and interest rate.",2026-07-25T11:40:41.232238+05:30
+finance_copilot,2,user,Analyse the last 3 months savings and compare it with the rest of the last quarter and tell me the numbers with proper analysis,2026-07-25T11:40:41.232238+05:30
+finance_copilot,3,assistant,"**Savings snapshot (₹)**  
+
+| Month | Earnings | Expense | Savings |
+|-------|----------|---------|---------|
+| Apr‑26 | 24 200 | 24 795.6 | **‑595.6** |
+| May‑26 | 32 000 | 24 698 | **7 302** |
+| Jun‑26 | 32 000 | 23 096 | **8 904** |
+| Jul‑26 | 32 000 | 23 546.5 | **8 453.5** |
+
+---
+
+### 1.  Last 3 months (May – Jul)
+
+* **Total savings**: 7 302 + 8 904 + 8 453.5 = **24 659.5**  
+* **Average per month**: 24 659.5 ÷ 3 = **8 219.8**
+
+### 2.  Rest of the last quarter (Apr – Jun)
+
+* **Total savings**: ‑595.6 + 7 302 + 8 904 = **15 210.4**  
+* **Average per month**: 15 210.4 ÷ 3 = **5 070.1**
+
+### 3.  Comparison
+
+| Metric | Last 3 months | Rest of Q2 | Difference |
+|--------|---------------|------------|------------|
+| Total savings | 24 659.5 | 15 210.4 | **+9 449.1** |
+| Avg. monthly | 8 219.8 | 5 070.1 | **+3 149.7** |
+| % increase | – | – | **+62 %** |
+
+**Interpretation**
+
+* **April was an outlier** – earnings were lower and expenses (especially transport & bike‑EMI) pushed savings into the negative.  
+* From **May onward** the earnings jumped to ₹32 k, while expenses fell (especially food & transport), producing a strong positive savings streak.  
+* The **average monthly savings** rose from ~₹5 k to ~₹8 k, a 62 % improvement over the quarter‑average.  
+* The cumulative extra ₹9 449 saved in the last three months could be earmarked for a goal (e.g., a vacation, an emergency buffer, or a larger purchase).
+
+**Next steps**
+
+1. **Maintain the higher‑earning pattern** – keep the May‑June income level (e.g., side‑job, overtime).  
+2. **Control the high‑expense categories** – transport and food are the biggest drivers; consider cheaper alternatives or meal‑prep.  
+3. **Re‑evaluate the April‑negative month** – if it was due to a one‑off expense, plan a buffer; if recurring, adjust the budget.  
+
+By sustaining the current savings pace, you’ll finish the quarter with a healthy cushion and stay on track for any upcoming financial goals.",2026-07-25T11:40:41.232238+05:30
