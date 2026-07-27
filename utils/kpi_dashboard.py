@@ -84,7 +84,12 @@ def get_current_month_forecast(
     if not os.path.exists(DAILY_MODEL_PATH):
         return None
 
-    model = joblib.load(DAILY_MODEL_PATH)
+    try:
+        model = joblib.load(DAILY_MODEL_PATH)
+    except Exception:
+        # If the serialized model cannot be imported in the current runtime,
+        # keep the dashboard usable and skip the optional KPI forecast.
+        return None
 
     df = filtered.copy()
     df["period"] = pd.to_datetime(df["period"])

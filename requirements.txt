@@ -7,5 +7,6 @@ python-dotenv
 requests
 joblib
 statsmodels
+xgboost>=1.7.0
 langgraph
 langchain-openai
