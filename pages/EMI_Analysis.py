@@ -996,3 +996,6 @@ with chart_col2:
     st.caption(
         f"Projected interest saving: {format_currency(interest_saved, 0)} with {format_currency(total_part_payment, 0)} in total extra payments."
     )
+
+
+    
