@@ -596,23 +596,30 @@ with add_payment_col3:
             
             st.rerun()
 
-# Show current part payments with delete option
+# Display current payments with delete buttons (clean version)
 if not st.session_state["emi_part_payments"].empty:
     st.markdown("#### Current Part Payments")
-    st.caption("Click the trash icon 🗑️ next to a payment to delete it, or edit values directly in the table below.")
     
-    # Display payments with delete buttons
-    for idx, row in st.session_state["emi_part_payments"].iterrows():
-        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
-        with col1:
-            st.write(f"Month {int(row['Payment Month'])}")
-        with col2:
-            st.write(format_currency(row['Payment Amount'], 0))
-        with col3:
+    # Create columns for header
+    header_cols = st.columns([2, 2, 0.8])
+    with header_cols[0]:
+        st.markdown("**Month**")
+    with header_cols[1]:
+        st.markdown("**Amount**")
+    with header_cols[2]:
+        st.markdown("**Action**")
+    
+    # Display each payment with delete button
+    for idx in st.session_state["emi_part_payments"].index:
+        row_cols = st.columns([2, 2, 0.8])
+        with row_cols[0]:
+            month_val = int(st.session_state["emi_part_payments"].loc[idx, "Payment Month"])
             # Find the month label
-            month_label = next((label for label, val in month_options if val == int(row['Payment Month'])), f"Month {int(row['Payment Month'])}")
+            month_label = next((label for label, val in month_options if val == month_val), f"Month {month_val}")
             st.write(month_label)
-        with col4:
+        with row_cols[1]:
+            st.write(format_currency(st.session_state["emi_part_payments"].loc[idx, "Payment Amount"], 0))
+        with row_cols[2]:
             if st.button("🗑️", key=f"delete_{idx}"):
                 # Remove the payment
                 updated_df = st.session_state["emi_part_payments"].drop(idx).reset_index(drop=True)
@@ -629,8 +636,13 @@ if not st.session_state["emi_part_payments"].empty:
                     st.info("💡 Part payment deleted from session")
                 
                 st.rerun()
+    
+    st.markdown("---")
 
 # Data editor for adding/editing payments
+st.markdown("#### Add or Edit Part Payments")
+st.caption("Add new payments by filling in the row below, or edit existing values directly in the table.")
+
 edited_payments = st.data_editor(
     st.session_state["emi_part_payments"],
     num_rows="dynamic",
@@ -643,12 +655,14 @@ edited_payments = st.data_editor(
             max_value=max(int(tenure_months * 2), 12),
             step=1,
             format="%d",
+            help="Enter the month number when this payment should be made",
         ),
         "Payment Amount": st.column_config.NumberColumn(
             "Payment Amount",
             min_value=0.0,
             step=1000.0,
             format="%.2f",
+            help="Enter the lump-sum payment amount",
         ),
     },
     key="emi_payment_editor",
@@ -691,6 +705,7 @@ if not st.session_state["emi_part_payments"].empty:
 
 # Add manual save/load buttons if GitHub is available
 if GITHUB_AVAILABLE:
+    st.markdown("---")
     save_col1, save_col2, save_col3 = st.columns([1, 2, 3])
     with save_col1:
         if st.button("💾 Save Part Payments", type="primary"):
@@ -996,6 +1011,3 @@ with chart_col2:
     st.caption(
         f"Projected interest saving: {format_currency(interest_saved, 0)} with {format_currency(total_part_payment, 0)} in total extra payments."
     )
-
-
-    
