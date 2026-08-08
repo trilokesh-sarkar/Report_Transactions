@@ -19,6 +19,7 @@ DEFAULT_GOALS = pd.DataFrame(
         {"Goal": "Loan Closure Target", "Target Amount": 200000.0, "Saved at Start": 0.0, "Target Month": "2027-06", "Priority": "High"},
     ]
 )
+DEFAULT_CATEGORIES = {"bike_emi", "Trip", "petrol", "bike_wash"}
 
 
 def format_currency(value):
@@ -325,7 +326,7 @@ def render_expense_entry(df):
 
         with st.form("expense_form", clear_on_submit=True):
             entry_date = st.date_input("📅 Date")
-            categories = sorted(set(df["category"].dropna().astype(str).tolist()) | {"bike_emi", "Trip"})
+            categories = sorted(set(df["category"].dropna().astype(str).tolist()) | DEFAULT_CATEGORIES)
             default_cat_index = categories.index("Food") if "Food" in categories else 0
             category = st.selectbox("📂 Category", categories, index=default_cat_index)
             account = st.text_input("🏦 Account / UPI / Card", value="UPI")
