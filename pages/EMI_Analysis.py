@@ -6,20 +6,10 @@ from decimal import Decimal, ROUND_HALF_UP
 import altair as alt
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 
-
-# -----------------------------------------------------------
-# PAGE SETUP
-# -----------------------------------------------------------
-st.set_page_config(layout="wide", page_title="EMI Analysis")
-
-css_path = ".streamlit/styles.css"
-if os.path.exists(css_path):
-    with open(css_path, encoding="utf-8") as css_file:
-        st.markdown(f"<style>{css_file.read()}</style>", unsafe_allow_html=True)
-
-st.markdown("<h1 class='page-title'>EMI Analysis &amp; Part Payment Planner</h1>", unsafe_allow_html=True)
-st.caption("Model how extra payments change your balance, interest outflow, EMI, and loan closure date.")
+# Import GitHub storage utilities
+from utils.github_storage import write_emi_analysis_csv, read_emi_analysis_csv, write_emi_part_payments_csv, read_emi_part_payments_csv
 
 
 # -----------------------------------------------------------
@@ -308,6 +298,155 @@ def build_cumulative_interest_chart(interest_df):
 
 
 # -----------------------------------------------------------
+# GITHUB STORAGE FUNCTIONS
+# -----------------------------------------------------------
+def save_part_payments_to_github(part_payments_df):
+    """Save part payments to GitHub with commit message"""
+    try:
+        timestamp = pd.Timestamp.now(tz="Asia/Kolkata").strftime("%Y-%m-%d %H:%M:%S")
+        write_emi_part_payments_csv(
+            part_payments_df,
+            commit_message=f"Part payments updated on {timestamp}"
+        )
+        return True, "Part payments saved to GitHub!"
+    except Exception as e:
+        return False, f"Failed to save part payments: {str(e)}"
+
+
+def load_part_payments_from_github():
+    """Load part payments from GitHub"""
+    try:
+        df = read_emi_part_payments_csv()
+        if df is not None and not df.empty:
+            return df
+        return pd.DataFrame(columns=["Payment Month", "Payment Amount"])
+    except Exception as e:
+        st.warning(f"Could not load part payments: {str(e)}")
+        return pd.DataFrame(columns=["Payment Month", "Payment Amount"])
+
+
+def save_emi_analysis_to_github(
+    comparison_df,
+    original_schedule,
+    updated_schedule,
+    payment_events,
+    loan_amount,
+    interest_rate,
+    tenure_months,
+    original_emi,
+    monthly_extra_payment,
+    part_payments,
+    loan_start_date,
+    as_of_date,
+):
+    """Save EMI analysis results to GitHub"""
+    
+    timestamp = pd.Timestamp.now(tz="Asia/Kolkata").strftime("%Y-%m-%d %H:%M:%S")
+    
+    summary_data = {
+        "Analysis Date": timestamp,
+        "Loan Amount": loan_amount,
+        "Interest Rate (%)": interest_rate,
+        "Tenure (Months)": tenure_months,
+        "Original EMI": original_emi,
+        "Monthly Extra Payment": monthly_extra_payment,
+        "Loan Start Date": pd.Timestamp(loan_start_date).strftime("%Y-%m-%d"),
+        "As Of Date": pd.Timestamp(as_of_date).strftime("%Y-%m-%d"),
+        "Number of Part Payments": len(part_payments),
+        "Total Part Payments": sum(p["amount"] for p in part_payments),
+        "Updated Tenure (Months)": len(updated_schedule),
+        "Original Tenure (Months)": len(original_schedule),
+        "Tenure Reduction (Months)": len(original_schedule) - len(updated_schedule),
+        "Original Total Interest": original_schedule["Interest Paid"].sum() if not original_schedule.empty else 0,
+        "Updated Total Interest": updated_schedule["Interest Paid"].sum() if not updated_schedule.empty else 0,
+        "Interest Saved": max(original_schedule["Interest Paid"].sum() - updated_schedule["Interest Paid"].sum(), 0) if not original_schedule.empty and not updated_schedule.empty else 0,
+        "Loan Closed Date": updated_schedule.iloc[-1]["EMI Date"] if not updated_schedule.empty else None,
+    }
+    
+    summary_df = pd.DataFrame([summary_data])
+    
+    original_schedule_export = original_schedule.copy()
+    if not original_schedule_export.empty:
+        original_schedule_export["Scenario"] = "Original"
+        original_schedule_export["EMI Date"] = original_schedule_export["EMI Date"].astype(str)
+    
+    updated_schedule_export = updated_schedule.copy()
+    if not updated_schedule_export.empty:
+        updated_schedule_export["Scenario"] = "Updated"
+        updated_schedule_export["EMI Date"] = updated_schedule_export["EMI Date"].astype(str)
+    
+    combined_schedule = pd.concat([original_schedule_export, updated_schedule_export], ignore_index=True)
+    
+    comparison_export = comparison_df.copy()
+    for col in comparison_export.columns:
+        if col != "Month" and pd.api.types.is_numeric_dtype(comparison_export[col]):
+            comparison_export[col] = comparison_export[col].round(2)
+    comparison_export["EMI Date"] = comparison_export["EMI Date"].astype(str) if "EMI Date" in comparison_export.columns else None
+    
+    payment_events_export = payment_events.copy()
+    if not payment_events_export.empty:
+        for col in payment_events_export.columns:
+            if col != "Input Row" and pd.api.types.is_numeric_dtype(payment_events_export[col]):
+                payment_events_export[col] = payment_events_export[col].round(2)
+    
+    part_payments_df = pd.DataFrame(part_payments) if part_payments else pd.DataFrame(columns=["row_id", "month", "amount"])
+    
+    try:
+        write_emi_analysis_csv(
+            summary_df=summary_df,
+            comparison_df=comparison_export,
+            original_schedule=original_schedule_export,
+            updated_schedule=updated_schedule_export,
+            payment_events=payment_events_export,
+            part_payments=part_payments_df,
+            commit_message=f"EMI Analysis saved on {timestamp}"
+        )
+        return True, "EMI analysis saved to GitHub successfully!"
+    except Exception as e:
+        return False, f"Failed to save to GitHub: {str(e)}"
+
+
+def load_emi_analysis_from_github():
+    """Load saved EMI analysis from GitHub"""
+    try:
+        return read_emi_analysis_csv()
+    except Exception as e:
+        st.warning(f"Could not load saved EMI analysis: {str(e)}")
+        return None
+
+
+# -----------------------------------------------------------
+# PAGE SETUP
+# -----------------------------------------------------------
+load_dotenv(dotenv_path=".env", override=False)
+
+st.set_page_config(
+    layout="wide",
+    page_title="EMI Analysis",
+    page_icon="💰",
+)
+
+css_path = ".streamlit/styles.css"
+if os.path.exists(css_path):
+    with open(css_path, encoding="utf-8") as css_file:
+        st.markdown(f"<style>{css_file.read()}</style>", unsafe_allow_html=True)
+
+st.markdown("<h1 class='page-title'>💰 EMI Analysis &amp; Part Payment Planner</h1>", unsafe_allow_html=True)
+st.caption("Model how extra payments change your balance, interest outflow, EMI, and loan closure date.")
+
+# -----------------------------------------------------------
+# LOAD SAVED PART PAYMENTS ON STARTUP
+# -----------------------------------------------------------
+if "emi_part_payments" not in st.session_state:
+    # Try to load from GitHub on startup
+    saved_payments = load_part_payments_from_github()
+    if saved_payments is not None and not saved_payments.empty:
+        st.session_state["emi_part_payments"] = saved_payments
+        st.sidebar.success("✅ Loaded saved part payments from GitHub")
+    else:
+        st.session_state["emi_part_payments"] = default_payments
+
+# -----------------------------------------------------------
 # INPUTS
 # -----------------------------------------------------------
 default_payments = pd.DataFrame(
@@ -316,9 +455,6 @@ default_payments = pd.DataFrame(
         "Payment Amount": pd.Series(dtype="float"),
     }
 )
-
-if "emi_part_payments" not in st.session_state:
-    st.session_state["emi_part_payments"] = default_payments
 
 st.markdown("### EMI Overview")
 
@@ -381,7 +517,6 @@ st.caption(
     "Assumption: any extra amount added with EMI and any one-time lump-sum part payment are both applied after the regular EMI of that month."
 )
 
-
 # -----------------------------------------------------------
 # PART PAYMENT INPUTS
 # -----------------------------------------------------------
@@ -424,6 +559,14 @@ with add_payment_col3:
                 ignore_index=True,
             )
             st.session_state["emi_part_payments"] = updated_entries
+            
+            # Auto-save to GitHub when adding a payment
+            success, message = save_part_payments_to_github(updated_entries)
+            if success:
+                st.success(f"✅ Part payment added and saved to GitHub: {message}")
+            else:
+                st.warning(f"⚠️ Part payment added but could not save to GitHub: {message}")
+            
             st.rerun()
 
 edited_payments = st.data_editor(
@@ -449,7 +592,17 @@ edited_payments = st.data_editor(
     key="emi_payment_editor",
 )
 
-st.session_state["emi_part_payments"] = edited_payments
+# Check if the data editor changed
+if not edited_payments.equals(st.session_state.get("emi_part_payments")):
+    st.session_state["emi_part_payments"] = edited_payments
+    # Auto-save to GitHub when data changes
+    if not edited_payments.empty:
+        success, message = save_part_payments_to_github(edited_payments)
+        if success:
+            st.sidebar.success("💾 Part payments auto-saved")
+        else:
+            st.sidebar.warning(f"⚠️ Could not auto-save: {message}")
+
 part_payments = normalise_part_payments(edited_payments)
 
 raw_rows = edited_payments.dropna(how="all")
@@ -458,6 +611,29 @@ ignored_rows = max(len(raw_rows) - len(part_payments), 0)
 if ignored_rows:
     st.warning(f"{ignored_rows} part payment row(s) were ignored because the month or amount was invalid.")
 
+# Add a manual save button
+save_col1, save_col2, save_col3 = st.columns([1, 2, 3])
+with save_col1:
+    if st.button("💾 Save Part Payments", type="primary"):
+        with st.spinner("Saving to GitHub..."):
+            success, message = save_part_payments_to_github(edited_payments)
+            if success:
+                st.success(f"✅ {message}")
+                st.balloons()
+            else:
+                st.error(f"❌ {message}")
+
+with save_col2:
+    if st.button("🔄 Load Saved Payments"):
+        saved_payments = load_part_payments_from_github()
+        if saved_payments is not None and not saved_payments.empty:
+            st.session_state["emi_part_payments"] = saved_payments
+            st.success("✅ Loaded saved part payments from GitHub")
+            st.rerun()
+        else:
+            st.warning("No saved part payments found")
+
+st.caption("💡 Part payments are automatically saved to GitHub when you add or edit them.")
 
 # -----------------------------------------------------------
 # CALCULATIONS
@@ -606,8 +782,8 @@ comparison_df["Cumulative Interest Saved"] = (
     comparison_df["Original Interest Paid"].cumsum() - comparison_df["Updated Interest Paid"].cumsum()
 )
 
-tab_compare, tab_original, tab_updated = st.tabs(
-    ["Comparison Table", "Original Schedule", "Updated Schedule"]
+tab_compare, tab_original, tab_updated, tab_save = st.tabs(
+    ["Comparison Table", "Original Schedule", "Updated Schedule", "💾 Save to GitHub"]
 )
 
 with tab_compare:
@@ -622,6 +798,75 @@ with tab_original:
 
 with tab_updated:
     st.dataframe(prepare_schedule_display(updated_schedule), width="stretch", height=360)
+
+with tab_save:
+    st.markdown("#### Save Complete EMI Analysis to GitHub")
+    st.caption("Save the current EMI analysis results, schedules, and comparisons to GitHub for future reference.")
+    
+    save_col1, save_col2 = st.columns([1, 3])
+    
+    with save_col1:
+        save_full_analysis = st.button("💾 Save Full Analysis", type="primary")
+    
+    with save_col2:
+        if save_full_analysis:
+            with st.spinner("Saving full analysis to GitHub..."):
+                success, message = save_emi_analysis_to_github(
+                    comparison_df=comparison_df,
+                    original_schedule=original_schedule,
+                    updated_schedule=updated_schedule,
+                    payment_events=payment_events,
+                    loan_amount=loan_amount,
+                    interest_rate=interest_rate,
+                    tenure_months=tenure_months,
+                    original_emi=original_emi,
+                    monthly_extra_payment=monthly_extra_payment,
+                    part_payments=part_payments,
+                    loan_start_date=loan_start_date,
+                    as_of_date=as_of_date,
+                )
+                if success:
+                    st.success(message)
+                    st.balloons()
+                else:
+                    st.error(message)
+    
+    st.markdown("---")
+    st.markdown("#### Load Saved Analysis")
+    st.caption("Load previously saved EMI analysis from GitHub.")
+    
+    if st.button("📂 Load Saved Analysis"):
+        with st.spinner("Loading from GitHub..."):
+            saved_data = load_emi_analysis_from_github()
+            if saved_data:
+                st.success("Analysis loaded successfully!")
+                st.dataframe(saved_data.get("summary"), use_container_width=True)
+                
+                load_tabs = st.tabs(["Summary", "Comparison", "Original Schedule", "Updated Schedule", "Payment Events"])
+                
+                with load_tabs[0]:
+                    if saved_data.get("summary") is not None:
+                        st.dataframe(saved_data["summary"])
+                
+                with load_tabs[1]:
+                    if saved_data.get("comparison") is not None:
+                        st.dataframe(saved_data["comparison"])
+                
+                with load_tabs[2]:
+                    if saved_data.get("original_schedule") is not None:
+                        st.dataframe(saved_data["original_schedule"])
+                
+                with load_tabs[3]:
+                    if saved_data.get("updated_schedule") is not None:
+                        st.dataframe(saved_data["updated_schedule"])
+                
+                with load_tabs[4]:
+                    if saved_data.get("payment_events") is not None and not saved_data["payment_events"].empty:
+                        st.dataframe(saved_data["payment_events"])
+                    else:
+                        st.info("No payment events found in saved data.")
+            else:
+                st.warning("No saved analysis found or unable to load.")
 
 
 # -----------------------------------------------------------
