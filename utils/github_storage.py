@@ -225,38 +225,25 @@ def write_emi_part_payments_csv(df, commit_message):
     """
     Write EMI part payments to GitHub as CSV.
     """
-    from io import StringIO
-    from .github_utils import github_upload_content
-    
     if df.empty:
         # Create empty dataframe with proper columns
         df = pd.DataFrame(columns=["Payment Month", "Payment Amount"])
     
-    csv_content = df.to_csv(index=False)
     file_path = "emi_part_payments.csv"
-    
-    try:
-        github_upload_content(file_path, csv_content, commit_message)
-        return True
-    except Exception as e:
-        raise Exception(f"Failed to upload part payments: {str(e)}")
+    return _write_csv_to_path(df, file_path, commit_message)
 
 
 def read_emi_part_payments_csv():
     """
     Read EMI part payments from GitHub.
     """
-    from io import StringIO
-    from .github_utils import github_download_content
-    
     file_path = "emi_part_payments.csv"
     
     try:
-        content = github_download_content(file_path)
-        if content:
-            df = pd.read_csv(StringIO(content))
-            return df
-        return pd.DataFrame(columns=["Payment Month", "Payment Amount"])
+        df = _read_csv_from_path(file_path, missing_ok=True)
+        if df.empty:
+            return pd.DataFrame(columns=["Payment Month", "Payment Amount"])
+        return df
     except Exception as e:
         # File might not exist yet
         return pd.DataFrame(columns=["Payment Month", "Payment Amount"])
@@ -266,45 +253,36 @@ def write_emi_analysis_csv(summary_df, comparison_df, original_schedule, updated
     """
     Write EMI analysis dataframes to GitHub as separate CSV files.
     """
-    from io import StringIO
-    from .github_utils import github_upload_content
-    import json
-    
     # Create a folder for EMI analysis
     folder_path = "emi_analysis/"
     
-    # Convert each dataframe to CSV string
-    def df_to_csv_string(df):
+    # Convert each dataframe to CSV
+    def df_to_write(df, file_path):
         if df is None or df.empty:
-            return ""
-        return df.to_csv(index=False)
+            return
+        try:
+            _write_csv_to_path(df, file_path, commit_message)
+        except Exception as e:
+            raise Exception(f"Failed to upload {file_path}: {str(e)}")
     
-    files_to_upload = {
-        f"{folder_path}summary.csv": df_to_csv_string(summary_df),
-        f"{folder_path}comparison.csv": df_to_csv_string(comparison_df),
-        f"{folder_path}original_schedule.csv": df_to_csv_string(original_schedule),
-        f"{folder_path}updated_schedule.csv": df_to_csv_string(updated_schedule),
-        f"{folder_path}payment_events.csv": df_to_csv_string(payment_events),
-        f"{folder_path}part_payments.csv": df_to_csv_string(part_payments),
-    }
+    files_to_upload = [
+        (summary_df, f"{folder_path}summary.csv"),
+        (comparison_df, f"{folder_path}comparison.csv"),
+        (original_schedule, f"{folder_path}original_schedule.csv"),
+        (updated_schedule, f"{folder_path}updated_schedule.csv"),
+        (payment_events, f"{folder_path}payment_events.csv"),
+        (part_payments, f"{folder_path}part_payments.csv"),
+    ]
     
     # Upload each file
-    for file_path, content in files_to_upload.items():
-        if content:  # Only upload non-empty files
-            try:
-                github_upload_content(file_path, content, commit_message)
-            except Exception as e:
-                raise Exception(f"Failed to upload {file_path}: {str(e)}")
+    for df, file_path in files_to_upload:
+        df_to_write(df, file_path)
     
     # Save timestamp file to track when analysis was saved
     timestamp = pd.Timestamp.now(tz="Asia/Kolkata").strftime("%Y-%m-%d %H:%M:%S")
     timestamp_df = pd.DataFrame({"saved_at": [timestamp]})
     try:
-        github_upload_content(
-            f"{folder_path}last_save_timestamp.csv",
-            timestamp_df.to_csv(index=False),
-            commit_message
-        )
+        _write_csv_to_path(timestamp_df, f"{folder_path}last_save_timestamp.csv", commit_message)
     except Exception as e:
         raise Exception(f"Failed to upload timestamp: {str(e)}")
 
@@ -313,9 +291,6 @@ def read_emi_analysis_csv():
     """
     Read EMI analysis CSV files from GitHub and return as dictionary of dataframes.
     """
-    from io import StringIO
-    from .github_utils import github_download_content
-    
     folder_path = "emi_analysis/"
     files = ["summary.csv", "comparison.csv", "original_schedule.csv", 
              "updated_schedule.csv", "payment_events.csv", "part_payments.csv"]
@@ -324,11 +299,9 @@ def read_emi_analysis_csv():
     
     for file_name in files:
         try:
-            content = github_download_content(f"{folder_path}{file_name}")
-            if content:
-                df = pd.read_csv(StringIO(content))
-                if not df.empty:
-                    result[file_name.replace(".csv", "")] = df
+            df = _read_csv_from_path(f"{folder_path}{file_name}", missing_ok=True)
+            if not df.empty:
+                result[file_name.replace(".csv", "")] = df
         except Exception as e:
             # File might not exist yet
             continue
