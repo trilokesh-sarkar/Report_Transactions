@@ -596,6 +596,41 @@ with add_payment_col3:
             
             st.rerun()
 
+# Show current part payments with delete option
+if not st.session_state["emi_part_payments"].empty:
+    st.markdown("#### Current Part Payments")
+    st.caption("Click the trash icon 🗑️ next to a payment to delete it, or edit values directly in the table below.")
+    
+    # Display payments with delete buttons
+    for idx, row in st.session_state["emi_part_payments"].iterrows():
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+        with col1:
+            st.write(f"Month {int(row['Payment Month'])}")
+        with col2:
+            st.write(format_currency(row['Payment Amount'], 0))
+        with col3:
+            # Find the month label
+            month_label = next((label for label, val in month_options if val == int(row['Payment Month'])), f"Month {int(row['Payment Month'])}")
+            st.write(month_label)
+        with col4:
+            if st.button("🗑️", key=f"delete_{idx}"):
+                # Remove the payment
+                updated_df = st.session_state["emi_part_payments"].drop(idx).reset_index(drop=True)
+                st.session_state["emi_part_payments"] = updated_df
+                
+                # Auto-save to GitHub after deletion
+                if GITHUB_AVAILABLE:
+                    success, message = save_part_payments_to_github(updated_df)
+                    if success:
+                        st.success(f"✅ Part payment deleted and saved to GitHub")
+                    else:
+                        st.warning(f"⚠️ Part payment deleted but could not save to GitHub: {message}")
+                else:
+                    st.info("💡 Part payment deleted from session")
+                
+                st.rerun()
+
+# Data editor for adding/editing payments
 edited_payments = st.data_editor(
     st.session_state["emi_part_payments"],
     num_rows="dynamic",
@@ -638,6 +673,22 @@ ignored_rows = max(len(raw_rows) - len(part_payments), 0)
 if ignored_rows:
     st.warning(f"{ignored_rows} part payment row(s) were ignored because the month or amount was invalid.")
 
+# Add clear all button
+if not st.session_state["emi_part_payments"].empty:
+    clear_col1, clear_col2, clear_col3 = st.columns([1, 2, 3])
+    with clear_col1:
+        if st.button("🗑️ Clear All Payments", type="secondary"):
+            st.session_state["emi_part_payments"] = default_payments.copy()
+            if GITHUB_AVAILABLE:
+                success, message = save_part_payments_to_github(default_payments.copy())
+                if success:
+                    st.success("✅ All payments cleared and saved to GitHub")
+                else:
+                    st.warning(f"⚠️ Payments cleared but could not save to GitHub: {message}")
+            else:
+                st.info("💡 All payments cleared from session")
+            st.rerun()
+
 # Add manual save/load buttons if GitHub is available
 if GITHUB_AVAILABLE:
     save_col1, save_col2, save_col3 = st.columns([1, 2, 3])
@@ -661,7 +712,7 @@ if GITHUB_AVAILABLE:
             else:
                 st.warning("No saved part payments found")
     
-    st.caption("💡 Part payments are automatically saved to GitHub when you add or edit them.")
+    st.caption("💡 Part payments are automatically saved to GitHub when you add, edit, or delete them.")
 else:
     st.info("💡 GitHub storage not configured. Part payments will be saved in session only and will not persist after restart.")
 
