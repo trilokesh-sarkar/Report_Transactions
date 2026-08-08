@@ -547,7 +547,7 @@ st.caption(
 st.divider()
 st.markdown("### Part Payment Inputs")
 st.caption(
-    "Each row below is a one-time lump-sum part payment in that EMI month. The base EMI stays the same and the loan tenure reduces automatically."
+    "Add lump-sum part payments using the form below. Each payment will reduce your loan tenure while keeping EMI fixed."
 )
 
 add_payment_col1, add_payment_col2, add_payment_col3 = st.columns([1.8, 1, 0.8])
@@ -570,7 +570,7 @@ with add_payment_col2:
 with add_payment_col3:
     st.markdown("")
     st.markdown("")
-    if st.button("Add Lump-Sum"):
+    if st.button("Add Lump-Sum", type="primary"):
         selected_month_value = dict(month_options)[selected_month_label]
         if selected_lumpsum_amount > 0:
             updated_entries = pd.concat(
@@ -596,7 +596,7 @@ with add_payment_col3:
             
             st.rerun()
 
-# Display current payments with delete buttons (clean version)
+# Display current payments with delete buttons
 if not st.session_state["emi_part_payments"].empty:
     st.markdown("#### Current Part Payments")
     
@@ -638,57 +638,8 @@ if not st.session_state["emi_part_payments"].empty:
                 st.rerun()
     
     st.markdown("---")
-
-# Data editor for adding/editing payments
-st.markdown("#### Add or Edit Part Payments")
-st.caption("Add new payments by filling in the row below, or edit existing values directly in the table.")
-
-edited_payments = st.data_editor(
-    st.session_state["emi_part_payments"],
-    num_rows="dynamic",
-    width="stretch",
-    hide_index=True,
-    column_config={
-        "Payment Month": st.column_config.NumberColumn(
-            "Payment Month",
-            min_value=1,
-            max_value=max(int(tenure_months * 2), 12),
-            step=1,
-            format="%d",
-            help="Enter the month number when this payment should be made",
-        ),
-        "Payment Amount": st.column_config.NumberColumn(
-            "Payment Amount",
-            min_value=0.0,
-            step=1000.0,
-            format="%.2f",
-            help="Enter the lump-sum payment amount",
-        ),
-    },
-    key="emi_payment_editor",
-)
-
-# Check if the data editor changed and auto-save
-if not edited_payments.equals(st.session_state.get("emi_part_payments")):
-    st.session_state["emi_part_payments"] = edited_payments
-    # Auto-save to GitHub when data changes
-    if GITHUB_AVAILABLE and not edited_payments.empty:
-        success, message = save_part_payments_to_github(edited_payments)
-        if success:
-            st.sidebar.success("💾 Part payments auto-saved")
-        else:
-            st.sidebar.warning(f"⚠️ Could not auto-save: {message}")
-
-part_payments = normalise_part_payments(edited_payments)
-
-raw_rows = edited_payments.dropna(how="all")
-ignored_rows = max(len(raw_rows) - len(part_payments), 0)
-
-if ignored_rows:
-    st.warning(f"{ignored_rows} part payment row(s) were ignored because the month or amount was invalid.")
-
-# Add clear all button
-if not st.session_state["emi_part_payments"].empty:
+    
+    # Clear all button
     clear_col1, clear_col2, clear_col3 = st.columns([1, 2, 3])
     with clear_col1:
         if st.button("🗑️ Clear All Payments", type="secondary"):
@@ -705,12 +656,11 @@ if not st.session_state["emi_part_payments"].empty:
 
 # Add manual save/load buttons if GitHub is available
 if GITHUB_AVAILABLE:
-    st.markdown("---")
     save_col1, save_col2, save_col3 = st.columns([1, 2, 3])
     with save_col1:
         if st.button("💾 Save Part Payments", type="primary"):
             with st.spinner("Saving to GitHub..."):
-                success, message = save_part_payments_to_github(edited_payments)
+                success, message = save_part_payments_to_github(st.session_state["emi_part_payments"])
                 if success:
                     st.success(f"✅ {message}")
                     st.balloons()
@@ -727,9 +677,11 @@ if GITHUB_AVAILABLE:
             else:
                 st.warning("No saved part payments found")
     
-    st.caption("💡 Part payments are automatically saved to GitHub when you add, edit, or delete them.")
+    st.caption("💡 Part payments are automatically saved to GitHub when you add or delete them.")
 else:
     st.info("💡 GitHub storage not configured. Part payments will be saved in session only and will not persist after restart.")
+
+part_payments = normalise_part_payments(st.session_state["emi_part_payments"])
 
 # -----------------------------------------------------------
 # CALCULATIONS
@@ -1011,5 +963,3 @@ with chart_col2:
     st.caption(
         f"Projected interest saving: {format_currency(interest_saved, 0)} with {format_currency(total_part_payment, 0)} in total extra payments."
     )
-
-    
