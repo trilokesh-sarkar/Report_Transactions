@@ -1,4 +1,5 @@
 import os
+import warnings
 import altair as alt
 import numpy as np
 import pandas as pd
@@ -29,6 +30,11 @@ def mean_absolute_error(actual, predicted):
     return float(np.mean(np.abs(actual_arr - pred_arr)))
 
 
+def clip_forecast(values, upper_bound):
+    arr = np.asarray(values, dtype=float)
+    return np.clip(arr, 0, max(float(upper_bound), 0.0))
+
+
 def seasonal_naive_forecast(train_series, horizon, season_length):
     values = train_series.to_numpy(dtype=float)
 
@@ -43,10 +49,48 @@ def seasonal_naive_forecast(train_series, horizon, season_length):
     return np.tile(last_season, repeats)[:horizon]
 
 
-def holt_winters_forecast(train_series, horizon, season_length):
+def moving_average_forecast(train_series, horizon, window, weighted=False):
+    values = train_series.tail(min(window, len(train_series))).to_numpy(dtype=float)
+
+    if len(values) == 0:
+        base_value = 0.0
+    elif weighted and len(values) > 1:
+        weights = np.arange(1, len(values) + 1, dtype=float)
+        base_value = float(np.average(values, weights=weights))
+    else:
+        base_value = float(values.mean())
+
+    return np.full(horizon, max(base_value, 0.0), dtype=float)
+
+
+def linear_trend_forecast(train_series, horizon, window):
+    values = train_series.tail(min(window, len(train_series))).to_numpy(dtype=float)
+
+    if len(values) == 0:
+        return np.zeros(horizon)
+    if len(values) == 1:
+        return np.full(horizon, max(float(values[-1]), 0.0), dtype=float)
+
+    x = np.arange(len(values), dtype=float)
+    slope, intercept = np.polyfit(x, values, 1)
+    future_x = np.arange(len(values), len(values) + horizon, dtype=float)
+    forecast = slope * future_x + intercept
+
+    return np.clip(forecast, 0, None)
+
+
+def robust_holt_winters_forecast(train_series, horizon, season_length):
     series = train_series.astype(float)
 
-    trend = "add" if len(series) >= 4 else None
+    if series.empty:
+        return np.zeros(horizon)
+
+    capped = series.clip(lower=0.0)
+    if len(capped) >= 30:
+        capped = capped.clip(upper=float(capped.quantile(0.95)))
+
+    transformed = np.log1p(capped)
+    trend = "add" if len(transformed) >= 4 else None
     use_seasonality = len(series) >= season_length * 2
     seasonal = "add" if use_seasonality else None
 
@@ -63,13 +107,32 @@ def holt_winters_forecast(train_series, horizon, season_length):
         model_kwargs["seasonal_periods"] = season_length
 
     try:
-        model = ExponentialSmoothing(series, **model_kwargs)
-        fitted = model.fit(optimized=True, use_brute=True)
-        forecast = np.asarray(fitted.forecast(horizon), dtype=float)
-        return np.clip(forecast, 0, None)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model = ExponentialSmoothing(transformed, **model_kwargs)
+            fitted = model.fit(optimized=True, use_brute=False)
+
+        forecast = np.expm1(np.asarray(fitted.forecast(horizon), dtype=float))
+        upper_bound = float(series.tail(min(max(season_length * 4, 28), len(series))).quantile(0.98))
+        if not np.isfinite(upper_bound) or upper_bound <= 0:
+            upper_bound = float(series.clip(lower=0.0).max())
+
+        return clip_forecast(forecast, upper_bound)
     except Exception:
-        # Safe fallback for unstable edge-cases
-        return np.clip(np.full(horizon, series.iloc[-1]), 0, None)
+        return moving_average_forecast(series, horizon, window=min(max(season_length, 7), len(series)))
+
+
+def monthly_hybrid_forecast(train_series, horizon):
+    weighted_recent = moving_average_forecast(train_series, horizon, window=3, weighted=True)
+    medium_term = moving_average_forecast(train_series, horizon, window=6, weighted=False)
+    trend = linear_trend_forecast(train_series, horizon, window=6)
+
+    forecast = (0.50 * weighted_recent) + (0.35 * medium_term) + (0.15 * trend)
+    upper_bound = float(train_series.tail(min(12, len(train_series))).quantile(0.98))
+    if not np.isfinite(upper_bound) or upper_bound <= 0:
+        upper_bound = float(train_series.clip(lower=0.0).max())
+
+    return clip_forecast(forecast, upper_bound)
 
 
 def build_future_index(last_timestamp, periods, freq):
@@ -78,48 +141,101 @@ def build_future_index(last_timestamp, periods, freq):
     return pd.date_range(start=start, periods=periods, freq=freq)
 
 
-def select_best_forecast_model(series, horizon, season_length, freq):
-    holdout = min(max(2, horizon // 2), max(2, len(series) // 5))
+def evaluate_candidate_windows(series, candidate_fn, validation_horizon, min_train_size, step=1):
+    errors = []
 
-    if len(series) <= holdout + 2:
-        final_pred = seasonal_naive_forecast(series, horizon, season_length)
+    last_end = len(series) - validation_horizon + 1
+    for end in range(min_train_size, last_end, step):
+        train = series.iloc[:end]
+        test = series.iloc[end : end + validation_horizon]
+
+        if len(test) < validation_horizon:
+            continue
+
+        preds = candidate_fn(train, validation_horizon)
+        errors.append(mean_absolute_error(test, preds))
+
+    return errors
+
+
+def select_best_forecast_model(series, horizon, freq):
+    if freq == "D":
+        validation_horizon = min(14, max(7, horizon))
+        min_train_size = max(56, validation_horizon * 4)
+        step = 7
+        season_length = 7
+        candidates = {
+            "Robust Holt-Winters": lambda train, h: robust_holt_winters_forecast(train, h, season_length),
+            "Seasonal Naive": lambda train, h: seasonal_naive_forecast(train, h, season_length),
+            "Weighted 28-Day Average": lambda train, h: moving_average_forecast(train, h, window=28, weighted=True),
+        }
+        baseline_name = "Seasonal Naive"
+    else:
+        validation_horizon = min(3, horizon)
+        min_train_size = max(9, validation_horizon * 3)
+        step = 1
+        season_length = 12
+        candidates = {
+            "Hybrid Recent-Level": lambda train, h: monthly_hybrid_forecast(train, h),
+            "Weighted 3-Month Average": lambda train, h: moving_average_forecast(train, h, window=3, weighted=True),
+            "Seasonal Naive": lambda train, h: seasonal_naive_forecast(train, h, season_length),
+        }
+        baseline_name = "Weighted 3-Month Average"
+
+    baseline_errors = evaluate_candidate_windows(
+        series,
+        candidates[baseline_name],
+        validation_horizon=validation_horizon,
+        min_train_size=min_train_size,
+        step=step,
+    )
+
+    scored_candidates = []
+    for model_name, candidate_fn in candidates.items():
+        candidate_errors = evaluate_candidate_windows(
+            series,
+            candidate_fn,
+            validation_horizon=validation_horizon,
+            min_train_size=min_train_size,
+            step=step,
+        )
+        mae = float(np.mean(candidate_errors)) if candidate_errors else None
+        scored_candidates.append((model_name, candidate_fn, mae, len(candidate_errors)))
+
+    valid_candidates = [row for row in scored_candidates if row[2] is not None]
+
+    if not valid_candidates:
+        final_pred = candidates[baseline_name](series, horizon)
         future_idx = build_future_index(series.index.max(), horizon, freq)
         forecast = pd.Series(np.clip(final_pred, 0, None), index=future_idx, name="forecast")
 
         return {
-            "model": "Seasonal Naive",
+            "model": baseline_name,
             "holdout": 0,
             "mae": None,
             "baseline_mae": None,
+            "improvement_pct": None,
             "forecast": forecast,
         }
 
-    train = series.iloc[:-holdout]
-    test = series.iloc[-holdout:]
+    selected, selected_fn, selected_mae, windows = min(valid_candidates, key=lambda row: row[2])
+    baseline_mae = float(np.mean(baseline_errors)) if baseline_errors else None
+    improvement_pct = None
+    if baseline_mae and selected_mae is not None and baseline_mae > 0:
+        improvement_pct = ((baseline_mae - selected_mae) / baseline_mae) * 100.0
 
-    naive_pred = seasonal_naive_forecast(train, holdout, season_length)
-    naive_mae = mean_absolute_error(test, naive_pred)
-
-    hw_pred = holt_winters_forecast(train, holdout, season_length)
-    hw_mae = mean_absolute_error(test, hw_pred)
-
-    if hw_mae <= naive_mae:
-        selected = "Holt-Winters"
-        selected_mae = hw_mae
-        final_pred = holt_winters_forecast(series, horizon, season_length)
-    else:
-        selected = "Seasonal Naive"
-        selected_mae = naive_mae
-        final_pred = seasonal_naive_forecast(series, horizon, season_length)
+    final_pred = selected_fn(series, horizon)
 
     future_idx = build_future_index(series.index.max(), horizon, freq)
     forecast = pd.Series(np.clip(final_pred, 0, None), index=future_idx, name="forecast")
 
     return {
         "model": selected,
-        "holdout": holdout,
+        "holdout": validation_horizon,
+        "windows": windows,
         "mae": selected_mae,
-        "baseline_mae": naive_mae,
+        "baseline_mae": baseline_mae,
+        "improvement_pct": improvement_pct,
         "forecast": forecast,
     }
 
@@ -250,7 +366,7 @@ st.bar_chart(cat_share)
 # -----------------------------------------------------------
 st.markdown("### Forecast Prediction (Backtested Time-Series)")
 st.caption(
-    "Model selection compares Seasonal Naive vs Holt-Winters on a holdout window and keeps the lower MAE model."
+    "Forecasts are selected by rolling backtests. Daily uses a robust outlier-capped Holt-Winters option, while monthly favors recent-level models for short histories."
 )
 
 fc1, fc2 = st.columns(2)
@@ -284,17 +400,20 @@ else:
     daily_result = select_best_forecast_model(
         series=daily_series,
         horizon=daily_horizon,
-        season_length=7,
         freq="D",
     )
 
-    d1, d2, d3 = st.columns(3)
+    d1, d2, d3, d4 = st.columns(4)
     d1.metric("Selected Model", daily_result["model"])
     d2.metric(
         "Holdout MAE",
         "N/A" if daily_result["mae"] is None else f"INR {daily_result['mae']:,.0f}",
     )
     d3.metric("Validation Window", "N/A" if daily_result["holdout"] == 0 else f"{daily_result['holdout']} days")
+    d4.metric(
+        "Vs Baseline",
+        "N/A" if daily_result["improvement_pct"] is None else f"{daily_result['improvement_pct']:.1f}%",
+    )
 
     render_forecast_chart(daily_series, daily_result["forecast"], "Date")
 
@@ -304,17 +423,16 @@ else:
     st.dataframe(daily_table, use_container_width=True)
 
 st.markdown("#### Monthly Forecast")
-if len(monthly_series) < 6:
-    st.warning("Need at least 6 months of data for a reliable monthly forecast.")
+if len(monthly_series) < 3:
+    st.warning("Need at least 3 months of data for a monthly forecast.")
 else:
     monthly_result = select_best_forecast_model(
         series=monthly_series,
         horizon=monthly_horizon,
-        season_length=12,
         freq="MS",
     )
 
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Selected Model", monthly_result["model"])
     m2.metric(
         "Holdout MAE",
@@ -323,6 +441,10 @@ else:
     m3.metric(
         "Validation Window",
         "N/A" if monthly_result["holdout"] == 0 else f"{monthly_result['holdout']} months",
+    )
+    m4.metric(
+        "Vs Baseline",
+        "N/A" if monthly_result["improvement_pct"] is None else f"{monthly_result['improvement_pct']:.1f}%",
     )
 
     render_forecast_chart(monthly_series, monthly_result["forecast"], "Month")
