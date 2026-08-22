@@ -75,9 +75,9 @@ df = read_csv()
 df["period"] = pd.to_datetime(df["period"])
 df = df.sort_values("period", ascending=False).reset_index(drop=True)
 
-st.sidebar.markdown("### Filters")
+st.markdown("### Filters")
 
-c1, c2 = st.sidebar.columns(2)
+c1, c2 = st.columns(2)
 
 with c1:
     f_year = st.multiselect("Year", sorted(df.year.unique()))
