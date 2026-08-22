@@ -73,8 +73,14 @@ def main():
         print("No data found. Cannot train forecast models.")
         return 1
 
-    daily_total, daily_fixed, daily_series = build_variable_series(df, "D")
-    monthly_total, monthly_fixed, monthly_series = build_variable_series(df, "MS")
+    current_month_start = pd.Timestamp.today().to_period("M").start_time
+    training_df = df[df["period"] < current_month_start]
+    if training_df.empty:
+        print("No completed month found. Cannot train forecast models.")
+        return 1
+
+    daily_total, daily_fixed, daily_series = build_variable_series(training_df, "D")
+    monthly_total, monthly_fixed, monthly_series = build_variable_series(training_df, "MS")
 
     print("\nTraining daily XGBoost forecast model...")
     train_and_save_bundle(daily_series, "D")

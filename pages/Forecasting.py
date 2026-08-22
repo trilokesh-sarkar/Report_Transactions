@@ -177,14 +177,22 @@ fixed_monthly_history = fixed_monthly_history.reindex(monthly_series.index, fill
 variable_daily_series = (daily_series - fixed_daily_history).clip(lower=0.0)
 variable_monthly_series = (monthly_series - fixed_monthly_history).clip(lower=0.0)
 
+current_month_start = pd.Timestamp.today().to_period("M").start_time
+training_daily_series = variable_daily_series[
+    variable_daily_series.index < current_month_start
+]
+training_monthly_series = variable_monthly_series[
+    variable_monthly_series.index < current_month_start
+]
+
 st.markdown("#### Daily Forecast")
-if len(variable_daily_series) < 36:
+if len(training_daily_series) < 36:
     st.warning("Need at least 36 days of data for the daily XGBoost forecaster.")
 else:
     daily_bundle = load_saved_bundle("D") if using_full_history else None
     if daily_bundle is None:
-        daily_bundle = train_xgboost_bundle(variable_daily_series, "D")
-    daily_result = evaluate_latest_holdout(variable_daily_series, "D")
+        daily_bundle = train_xgboost_bundle(training_daily_series, "D")
+    daily_result = evaluate_latest_holdout(training_daily_series, "D")
     daily_variable_forecast = forecast_with_xgboost_bundle(daily_bundle, variable_daily_series, daily_horizon)
     daily_fixed_future = build_future_fixed_series(variable_daily_series.index.max(), daily_horizon, "D", fixed_daily_context)
     daily_forecast = (daily_variable_forecast.add(daily_fixed_future, fill_value=0.0)).rename("forecast")
@@ -198,15 +206,15 @@ else:
     st.dataframe(daily_table, use_container_width=True)
 
 st.markdown("#### Monthly Forecast")
-if len(variable_monthly_series) < 20:
+if len(training_monthly_series) < 20:
     st.warning("Need at least 20 months of data for the monthly XGBoost forecaster.")
 else:
     monthly_bundle = load_saved_bundle("MS") if using_full_history else None
     if monthly_bundle is None:
-        monthly_bundle = train_xgboost_bundle(variable_monthly_series, "MS")
-    monthly_result = evaluate_latest_holdout(variable_monthly_series, "MS")
-    monthly_variable_forecast = forecast_with_xgboost_bundle(monthly_bundle, variable_monthly_series, monthly_horizon)
-    monthly_fixed_future = build_future_fixed_series(variable_monthly_series.index.max(), monthly_horizon, "MS", fixed_monthly_context)
+        monthly_bundle = train_xgboost_bundle(training_monthly_series, "MS")
+    monthly_result = evaluate_latest_holdout(training_monthly_series, "MS")
+    monthly_variable_forecast = forecast_with_xgboost_bundle(monthly_bundle, training_monthly_series, monthly_horizon)
+    monthly_fixed_future = build_future_fixed_series(training_monthly_series.index.max(), monthly_horizon, "MS", fixed_monthly_context)
     monthly_forecast = (monthly_variable_forecast.add(monthly_fixed_future, fill_value=0.0)).rename("forecast")
 
     render_model_metrics(monthly_result, "months")
