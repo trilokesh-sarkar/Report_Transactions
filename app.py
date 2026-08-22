@@ -246,6 +246,14 @@ def render_page_header():
     st.markdown("<h5 class='subtitle'>Track • Analyze • Forecast • Optimize</h5>", unsafe_allow_html=True)
 
 
+def render_quick_navigation():
+    st.sidebar.markdown("### Quick Access")
+    st.sidebar.page_link("pages/Forecasting.py", label="Open Forecasting", icon="📈")
+
+    st.page_link("pages/Forecasting.py", label="Go To Forecasting", icon="📈")
+    st.caption("Open the forecasting page for daily and monthly spend predictions based on your latest history.")
+
+
 def require_password():
     app_password = os.getenv("APP_PASSWORD")
     password = st.sidebar.text_input("🔑 Enter Access Password", type="password")
@@ -820,6 +828,7 @@ def main():
     load_custom_css()
     render_page_header()
     require_password()
+    render_quick_navigation()
 
     df = prepare_main_dataframe()
     filters = render_sidebar_filters(df)
