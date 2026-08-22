@@ -8,7 +8,11 @@ from datetime import datetime, timedelta
 import altair as alt
 import os, joblib
 
-from utils.forecast_xgboost import forecast_with_xgboost_bundle
+from utils.forecast_xgboost import (
+    build_fixed_history_series,
+    build_future_fixed_series,
+    forecast_with_xgboost_bundle,
+)
 
 
 # =======================================================================
@@ -108,11 +112,20 @@ def get_current_month_forecast(
 
     try:
         if isinstance(model, dict) and "model" in model:
+            fixed_history, fixed_context = build_fixed_history_series(df, "D")
+            fixed_history = fixed_history.reindex(daily.index, fill_value=0.0)
+            variable_daily = (daily - fixed_history).clip(lower=0.0)
             if daily.index.max() >= end_of_month:
                 preds = pd.Series(dtype=float)
             else:
                 horizon = (end_of_month - daily.index.max()).days
-                predicted = forecast_with_xgboost_bundle(model, daily, horizon)
+                variable_forecast = forecast_with_xgboost_bundle(
+                    model, variable_daily, horizon
+                )
+                fixed_forecast = build_future_fixed_series(
+                    variable_daily.index.max(), horizon, "D", fixed_context
+                )
+                predicted = variable_forecast.add(fixed_forecast, fill_value=0.0)
                 preds = predicted[predicted.index >= today]
         else:
             future_dates = pd.date_range(today, end_of_month)
