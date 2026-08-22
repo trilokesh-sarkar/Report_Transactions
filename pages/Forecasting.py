@@ -139,7 +139,7 @@ st.bar_chart(cat_share)
 st.markdown("### Forecast Prediction (XGBoost)")
 st.caption(
     "When no filters are applied, this page uses the saved repo XGBoost models trained locally on the latest data. "
-    "If you filter the dataset, it retrains XGBoost on that filtered history so the forecast stays aligned with what you selected."
+    "If you filter the dataset, it retrains XGBoost on that history when enough completed data is available; otherwise it uses the full completed history."
 )
 st.caption(
     "Fixed costs are handled separately before training: Rent contributes INR 4,000 per month and bike_emi contributes INR 5,333 per month. "
@@ -185,14 +185,52 @@ training_monthly_series = variable_monthly_series[
     variable_monthly_series.index < current_month_start
 ]
 
+full_daily_series = (
+    df.set_index("period")
+    .sort_index()["amount"]
+    .groupby(pd.Grouper(freq="D"))
+    .sum()
+    .asfreq("D", fill_value=0.0)
+)
+full_monthly_series = (
+    df.set_index("period")
+    .sort_index()["amount"]
+    .groupby(pd.Grouper(freq="MS"))
+    .sum()
+    .asfreq("MS", fill_value=0.0)
+)
+full_daily_fixed, _ = build_fixed_history_series(df, "D")
+full_monthly_fixed, _ = build_fixed_history_series(df, "MS")
+full_daily_fixed = full_daily_fixed.reindex(full_daily_series.index, fill_value=0.0)
+full_monthly_fixed = full_monthly_fixed.reindex(full_monthly_series.index, fill_value=0.0)
+full_training_daily_series = (full_daily_series - full_daily_fixed).clip(lower=0.0)
+full_training_monthly_series = (full_monthly_series - full_monthly_fixed).clip(lower=0.0)
+full_training_daily_series = full_training_daily_series[
+    full_training_daily_series.index < current_month_start
+]
+full_training_monthly_series = full_training_monthly_series[
+    full_training_monthly_series.index < current_month_start
+]
+
+daily_model_series = (
+    training_daily_series
+    if len(training_daily_series) >= 36
+    else full_training_daily_series
+)
+monthly_model_series = (
+    training_monthly_series
+    if len(training_monthly_series) >= 20
+    else full_training_monthly_series
+)
+
 st.markdown("#### Daily Forecast")
-if len(training_daily_series) < 36:
+if len(daily_model_series) < 36:
     st.warning("Need at least 36 days of data for the daily XGBoost forecaster.")
 else:
     daily_bundle = load_saved_bundle("D") if using_full_history else None
     if daily_bundle is None:
-        daily_bundle = train_xgboost_bundle(training_daily_series, "D")
-    daily_result = evaluate_latest_holdout(training_daily_series, "D")
+        daily_bundle = train_xgboost_bundle(daily_model_series, "D")
+    daily_result = evaluate_latest_holdout(daily_model_series, "D")
     daily_variable_forecast = forecast_with_xgboost_bundle(daily_bundle, variable_daily_series, daily_horizon)
     daily_fixed_future = build_future_fixed_series(variable_daily_series.index.max(), daily_horizon, "D", fixed_daily_context)
     daily_forecast = (daily_variable_forecast.add(daily_fixed_future, fill_value=0.0)).rename("forecast")
@@ -206,15 +244,15 @@ else:
     st.dataframe(daily_table, use_container_width=True)
 
 st.markdown("#### Monthly Forecast")
-if len(training_monthly_series) < 20:
+if len(monthly_model_series) < 20:
     st.warning("Need at least 20 months of data for the monthly XGBoost forecaster.")
 else:
     monthly_bundle = load_saved_bundle("MS") if using_full_history else None
     if monthly_bundle is None:
-        monthly_bundle = train_xgboost_bundle(training_monthly_series, "MS")
-    monthly_result = evaluate_latest_holdout(training_monthly_series, "MS")
-    monthly_variable_forecast = forecast_with_xgboost_bundle(monthly_bundle, training_monthly_series, monthly_horizon)
-    monthly_fixed_future = build_future_fixed_series(training_monthly_series.index.max(), monthly_horizon, "MS", fixed_monthly_context)
+        monthly_bundle = train_xgboost_bundle(monthly_model_series, "MS")
+    monthly_result = evaluate_latest_holdout(monthly_model_series, "MS")
+    monthly_variable_forecast = forecast_with_xgboost_bundle(monthly_bundle, monthly_model_series, monthly_horizon)
+    monthly_fixed_future = build_future_fixed_series(monthly_model_series.index.max(), monthly_horizon, "MS", fixed_monthly_context)
     monthly_forecast = (monthly_variable_forecast.add(monthly_fixed_future, fill_value=0.0)).rename("forecast")
 
     render_model_metrics(monthly_result, "months")
