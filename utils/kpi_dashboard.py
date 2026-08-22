@@ -240,7 +240,7 @@ def render_kpis(filtered: pd.DataFrame, df: pd.DataFrame, MONTHLY_BUDGET: float)
     # =====================================================
     # 🔮 FORECAST (CURRENT MONTH)
     # =====================================================
-    forecast = get_current_month_forecast(filtered)
+    forecast = get_current_month_forecast(df)
 
     # =====================================================
     # ========== ROW 1 — CORE KPIs ==========
