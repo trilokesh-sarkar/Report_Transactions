@@ -268,9 +268,9 @@ def prepare_main_dataframe():
 
 
 def render_sidebar_filters(df):
-    st.markdown("### 🔍 Filters")
+    st.sidebar.markdown("### 🔍 Filters")
 
-    col1, col2 = st.columns(2)
+    col1, col2 = st.sidebar.columns(2)
     with col1:
         selected_years = st.multiselect("Year", sorted(df["year"].dropna().unique()))
         selected_accounts = st.multiselect("Account", sorted(df["accounts"].dropna().unique()))
