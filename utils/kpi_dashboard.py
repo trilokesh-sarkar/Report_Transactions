@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import altair as alt
 import os, joblib
 
+from utils.forecast_xgboost import forecast_with_xgboost_bundle
+
 
 # =======================================================================
 # 🔥 MINI SPARKLINE (embedded KPI chart)
@@ -92,9 +94,11 @@ def get_current_month_forecast(
         return None
 
     df = filtered.copy()
-    df["period"] = pd.to_datetime(df["period"])
+    df["period"] = pd.to_datetime(df["period"], errors="coerce").dt.normalize()
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0.0)
+    df = df.dropna(subset=["period"])
 
-    daily = df.groupby("period")["amount"].sum().reset_index()
+    daily = df.groupby("period")["amount"].sum().sort_index()
 
     if daily.empty:
         return None
@@ -102,32 +106,39 @@ def get_current_month_forecast(
     today = pd.Timestamp.today().normalize()
     end_of_month = today + pd.offsets.MonthEnd(0)
 
-    future_dates = pd.date_range(today, end_of_month)
-
-    if future_dates.empty:
+    try:
+        if isinstance(model, dict) and "model" in model:
+            if daily.index.max() >= end_of_month:
+                preds = pd.Series(dtype=float)
+            else:
+                horizon = (end_of_month - daily.index.max()).days
+                predicted = forecast_with_xgboost_bundle(model, daily, horizon)
+                preds = predicted[predicted.index >= today]
+        else:
+            future_dates = pd.date_range(today, end_of_month)
+            future = pd.DataFrame({"period": future_dates})
+            future["day"] = future["period"].dt.day
+            future["dow"] = future["period"].dt.dayofweek
+            future["month"] = future["period"].dt.month
+            preds = pd.Series(model.predict(future[["day", "dow", "month"]]))
+    except Exception:
         return None
 
-    future = pd.DataFrame({"period": future_dates})
-    future["day"]   = future["period"].dt.day
-    future["dow"]   = future["period"].dt.dayofweek
-    future["month"] = future["period"].dt.month
+    if preds.empty:
+        remaining_forecast = 0.0
+    else:
+        # ---------------- SAFETY CAPS ----------------
+        max_daily = daily.quantile(0.95)
+        avg_daily = daily.mean()
 
-    # ---------------- SAFETY CAPS ----------------
-    max_daily = daily["amount"].quantile(0.95)
-    avg_daily = daily["amount"].mean()
+        # Hard cap
+        preds = preds.clip(0, max_daily)
 
-    preds = model.predict(
-        future[["day", "dow", "month"]]
-    )
+        # Conservative sanity check
+        if preds.mean() > avg_daily * 2:
+            preds = preds.clip(0, avg_daily * 1.5)
 
-    # Hard cap
-    preds = preds.clip(0, max_daily)
-
-    # Conservative sanity check
-    if preds.mean() > avg_daily * 2:
-        preds = preds.clip(0, avg_daily * 1.5)
-
-    remaining_forecast = preds.sum()
+        remaining_forecast = preds.sum()
 
     spent_so_far = df[
         df["period"].dt.to_period("M") == today.to_period("M")
