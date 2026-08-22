@@ -250,9 +250,6 @@ def render_quick_navigation():
     st.sidebar.markdown("### Quick Access")
     st.sidebar.page_link("pages/Forecasting.py", label="Open Forecasting", icon="📈")
 
-    st.page_link("pages/Forecasting.py", label="Go To Forecasting", icon="📈")
-    st.caption("Open the forecasting page for daily and monthly spend predictions based on your latest history.")
-
 
 def require_password():
     app_password = os.getenv("APP_PASSWORD")
