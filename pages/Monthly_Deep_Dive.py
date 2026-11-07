@@ -45,11 +45,11 @@ st.sidebar.markdown("### Filters")
 c1, c2 = st.sidebar.columns(2)
 
 with c1:
-    f_year = persistent_multiselect("Year", sorted(df.year.unique()), "years")
+    f_year = persistent_multiselect("Year", sorted(df.year.unique(), reverse=True), "years")
     f_acc = persistent_multiselect("Account", sorted(df.accounts.unique()), "accounts")
 
 with c2:
-    f_month = persistent_multiselect("Month", sorted(df.year_month.unique()), "months")
+    f_month = persistent_multiselect("Month", sorted(df.year_month.unique(), reverse=True), "months")
     include_cat = persistent_multiselect(
         "Include Category",
         sorted(df.category.unique()),

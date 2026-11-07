@@ -273,11 +273,11 @@ def render_sidebar_filters(df):
 
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        selected_years = persistent_multiselect("Year", sorted(df["year"].dropna().unique()), "years")
+        selected_years = persistent_multiselect("Year", sorted(df["year"].dropna().unique(), reverse=True), "years")
         selected_accounts = persistent_multiselect("Account", sorted(df["accounts"].dropna().unique()), "accounts")
 
     with col2:
-        selected_months = persistent_multiselect("Month", sorted(df["year_month"].dropna().unique()), "months")
+        selected_months = persistent_multiselect("Month", sorted(df["year_month"].dropna().unique(), reverse=True), "months")
         include_categories = persistent_multiselect(
             "Include Category",
             sorted(df["category"].dropna().unique()),
