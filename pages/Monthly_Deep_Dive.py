@@ -2,6 +2,7 @@ import os
 
 import pandas as pd
 import streamlit as st
+from utils.filter_state import persistent_multiselect, reset_filter_button
 
 from utils.github_storage import read_csv
 from utils.kpi_dashboard import get_income
@@ -44,21 +45,25 @@ st.sidebar.markdown("### Filters")
 c1, c2 = st.sidebar.columns(2)
 
 with c1:
-    f_year = st.multiselect("Year", sorted(df.year.unique()))
-    f_acc = st.multiselect("Account", sorted(df.accounts.unique()))
+    f_year = persistent_multiselect("Year", sorted(df.year.unique()), "years")
+    f_acc = persistent_multiselect("Account", sorted(df.accounts.unique()), "accounts")
 
 with c2:
-    f_month = st.multiselect("Month", sorted(df.year_month.unique()))
-    include_cat = st.multiselect(
+    f_month = persistent_multiselect("Month", sorted(df.year_month.unique()), "months")
+    include_cat = persistent_multiselect(
         "Include Category",
         sorted(df.category.unique()),
+        "include_categories",
         placeholder="Select categories...",
     )
-    exclude_cat = st.multiselect(
+    exclude_cat = persistent_multiselect(
         "Exclude Category",
         sorted(df.category.unique()),
+        "exclude_categories",
         placeholder="Select categories...",
     )
+
+reset_filter_button()
 
 st.sidebar.markdown("### Savings Settings")
 income_mode = st.sidebar.radio(

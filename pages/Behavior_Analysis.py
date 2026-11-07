@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from utils.github_storage import read_csv
+from utils.filter_state import persistent_multiselect, reset_filter_button
 import os
 
 # -----------------------------------------------------------
@@ -28,13 +29,15 @@ st.sidebar.markdown("### Filters")
 c1, c2 = st.sidebar.columns(2)
 
 with c1:
-    f_year = st.multiselect("Year", sorted(df.year.unique()))
-    f_acc = st.multiselect("Account", sorted(df.accounts.unique()))
+    f_year = persistent_multiselect("Year", sorted(df.year.unique()), "years")
+    f_acc = persistent_multiselect("Account", sorted(df.accounts.unique()), "accounts")
 
 with c2:
-    f_month = st.multiselect("Month", sorted(df.year_month.unique()))
-    include_cat = st.multiselect("Include Category", sorted(df.category.unique()))
-    exclude_cat = st.multiselect("Exclude Category", sorted(df.category.unique()))
+    f_month = persistent_multiselect("Month", sorted(df.year_month.unique()), "months")
+    include_cat = persistent_multiselect("Include Category", sorted(df.category.unique()), "include_categories")
+    exclude_cat = persistent_multiselect("Exclude Category", sorted(df.category.unique()), "exclude_categories")
+
+reset_filter_button()
 
 # -----------------------------------------------------------
 # APPLY FILTERS

@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from utils.finance_agent import get_ai_configuration_status, run_finance_agent
 from utils.github_storage import read_chat_history_csv, read_csv, write_chat_history_csv, write_csv, write_savings_csv
 from utils.kpi_dashboard import get_income, render_kpis
+from utils.filter_state import persistent_multiselect, reset_filter_button
 
 GOAL_TRACKING_START_PERIOD = "2026-04"
 MONTHLY_BUDGET = 20000
@@ -272,21 +273,25 @@ def render_sidebar_filters(df):
 
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        selected_years = st.multiselect("Year", sorted(df["year"].dropna().unique()))
-        selected_accounts = st.multiselect("Account", sorted(df["accounts"].dropna().unique()))
+        selected_years = persistent_multiselect("Year", sorted(df["year"].dropna().unique()), "years")
+        selected_accounts = persistent_multiselect("Account", sorted(df["accounts"].dropna().unique()), "accounts")
 
     with col2:
-        selected_months = st.multiselect("Month", sorted(df["year_month"].dropna().unique()))
-        include_categories = st.multiselect(
+        selected_months = persistent_multiselect("Month", sorted(df["year_month"].dropna().unique()), "months")
+        include_categories = persistent_multiselect(
             "Include Category",
             sorted(df["category"].dropna().unique()),
+            "include_categories",
             placeholder="Include category...",
         )
-        exclude_categories = st.multiselect(
+        exclude_categories = persistent_multiselect(
             "Exclude Category",
             sorted(df["category"].dropna().unique()),
+            "exclude_categories",
             placeholder="Exclude category...",
         )
+
+    reset_filter_button()
 
     return {
         "years": selected_years,
