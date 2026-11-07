@@ -1,7 +1,15 @@
 import streamlit as st
 from dotenv import load_dotenv
 
-from app import build_finance_context, load_custom_css, prepare_main_dataframe, render_agentic_ai_section
+from app import (
+    apply_sidebar_filters,
+    build_finance_context,
+    load_custom_css,
+    prepare_main_dataframe,
+    render_agentic_ai_section,
+    render_sidebar_filters,
+    summarize_active_filters,
+)
 
 
 def render_context_snapshot(finance_context):
@@ -25,7 +33,9 @@ def main():
     st.caption("Use a dedicated page for Finance Copilot and Goal Planning Agent without scrolling through the main dashboard.")
 
     df = prepare_main_dataframe()
-    st.session_state["active_filter_summary"] = {}
+    filters = render_sidebar_filters(df)
+    st.session_state["active_filter_summary"] = summarize_active_filters(filters)
+    df = apply_sidebar_filters(df, filters)
     finance_context = build_finance_context(df)
 
     if finance_context["monthly_goal_view"].empty:

@@ -7,6 +7,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
+from app import prepare_main_dataframe, render_sidebar_filters
 
 # Try to import GitHub storage utilities, but handle gracefully if they don't exist
 try:
@@ -454,6 +455,9 @@ if os.path.exists(css_path):
 
 st.markdown("<h1 class='page-title'>💰 EMI Analysis &amp; Part Payment Planner</h1>", unsafe_allow_html=True)
 st.caption("Model how extra payments change your balance, interest outflow, EMI, and loan closure date.")
+
+# Keep shared transaction filters available throughout the multipage app.
+render_sidebar_filters(prepare_main_dataframe())
 
 # -----------------------------------------------------------
 # INITIALIZE DEFAULTS
