@@ -20,7 +20,7 @@ DEFAULT_GOALS = pd.DataFrame(
         {"Goal": "Loan Closure Target", "Target Amount": 200000.0, "Saved at Start": 0.0, "Target Month": "2027-06", "Priority": "High"},
     ]
 )
-DEFAULT_CATEGORIES = {"bike_emi", "Trip", "petrol", "bike_wash"}
+DEFAULT_CATEGORIES = {"bike_emi", "Trip", "petrol", "bike_wash", "bike_maintainance"}
 
 
 def format_currency(value):
