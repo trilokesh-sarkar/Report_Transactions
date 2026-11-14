@@ -453,7 +453,19 @@ hr {
 }
 
 @media (max-width: 860px) {
+    html,
+    body,
+    .stApp {
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
     .block-container {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 100%;
+        padding-right: 1rem;
+        padding-left: 1rem;
         padding-top: 0.55rem;
         padding-bottom: 1rem;
     }
